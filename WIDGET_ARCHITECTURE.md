@@ -237,7 +237,7 @@ Connections encode favorable or unfavorable changes relative to `direction`: gre
 
 One tooltip serves query, fragment, rule, and product nodes. It sits outside the scrolling stage, clamps its position to the visual viewport, and uses a compact layout when available width is below roughly 520 px. Keyboard focus supplies node bounds when there is no pointer event.
 
-Product nodes use `role="button"`; informational nodes use `role="img"`. Nodes have accessible names, focus styling, and tooltip descriptions. Enter and Space select a product; arrow keys move focus through product DOM order; Escape dismisses the tooltip. The status region uses `aria-live="polite"`, and CSS respects reduced-motion preferences. Remaining accessibility gaps and test coverage are listed below.
+Product nodes use `role="button"` with `aria-pressed` reflecting the selected product. They form one roving-tabindex group: exactly one product holds `tabindex="0"` (the previously roving product if it still exists after a render, else the selected product, else the first), so the graph is a single Tab stop. Arrow keys move clockwise (Right/Down) or counter-clockwise (Left/Up) in on-screen order, derived from the layout angles starting at 12 o'clock, and wrap; Home and End jump to the first and last product. Enter and Space select a product; Escape dismisses the tooltip. Query, fragment, and rule nodes are informational: `role="img"` with a full `aria-label`, not focusable, with tooltips on pointer hover only. The status region uses `aria-live="polite"`, and CSS respects reduced-motion preferences. Depictions sit on a light backing and product plates turn light under `.dark`, `[data-theme="dark"]`, or `prefers-color-scheme: dark`. Remaining accessibility gaps and test coverage are listed below.
 
 ## marimo integration and host sizing
 
@@ -297,7 +297,7 @@ Run the full verification sequence documented in [AGENTS.md](AGENTS.md). JS test
 The remaining implementation and coverage limits are:
 
 - **Sizing:** Replace the [private host override](#host-specific-height-override) when a suitable sizing API exists, or cover it in real marimo integration tests.
-- **Accessibility:** Each graph node remains a tab stop, selection lacks a pressed or selected ARIA state, and rerendering rebuilds node DOM. Consider roving focus, focus retention, and spatial arrow navigation; preserve the [existing keyboard and live-region behavior](#visual-encoding-tooltips-and-keyboard-behavior).
+- **Accessibility:** Rerendering rebuilds node DOM (roving position and focus are restored by product id), and rule, fragment, and query tooltips are not reachable by keyboard. Preserve the [existing keyboard and live-region behavior](#visual-encoding-tooltips-and-keyboard-behavior).
 - **Browser verification:** Keyboard activation and navigation, tooltip placement at every viewport edge, light/dark themes, and actual responsive layout need real-browser coverage.
 - **Host integration:** Test downstream cell reactivity, synchronized multiple views, unmount, hot reload, and height restoration in a real marimo page.
 - **Performance:** Highlight matching can dominate a cold render. Eager provenance and cumulative SVG assets consume memory; measure both before increasing dataset or graph limits.

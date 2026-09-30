@@ -1,6 +1,6 @@
 .mmp-instrument {
   --mmp-surface: var(--muted, #f1f5f9);
-  --mmp-paper: var(--card, var(--background, #fff));
+  --mmp-paper: var(--card, var(--mmp-bg));
   --mmp-graphite: var(--foreground, #0f172a);
   --mmp-muted: var(--muted-foreground, #64748b);
   --mmp-grid: var(--border, #e2e8f0);
@@ -8,6 +8,12 @@
   --mmp-loss: var(--red-11, #ce2c31);
   --mmp-amber: var(--primary, #0880ea);
   --mmp-neutral: var(--muted-foreground, #64748b);
+  --mmp-bg: var(--background, #fff);
+  --mmp-popover: var(--popover, var(--mmp-bg));
+  --mmp-focus: var(--ring, #0880ea);
+  --mmp-selected: var(--mmp-graphite);
+  --mmp-plate: var(--mmp-paper);
+  --mmp-plate-text: var(--mmp-muted);
   color: var(--mmp-graphite);
   background: var(--mmp-paper);
   border: 1px solid var(--mmp-grid);
@@ -19,7 +25,7 @@
 }
 .mmp-toolbar { background: var(--mmp-paper); border-radius: var(--radius, 8px) var(--radius, 8px) 0 0; box-shadow: 0 5px 14px color-mix(in srgb, var(--foreground, #0f172a) 8%, transparent); position: sticky; top: var(--mmp-sticky-top, 0px); z-index: 20; }
 .mmp-header { align-items: center; background: var(--mmp-paper); border-bottom: 1px solid var(--mmp-grid); display: flex; gap: 8px; justify-content: space-between; padding: 8px 22px; }
-.mmp-sidebar-toggle { align-items: center; background: var(--background, #fff); border: 1px solid var(--input, var(--mmp-grid)); border-radius: calc(var(--radius, 8px) - 2px); color: var(--mmp-muted); cursor: pointer; display: inline-flex; flex: 0 0 auto; font: 700 14px/1 var(--text-font, sans-serif); height: 26px; justify-content: center; padding: 0; width: 28px; }
+.mmp-sidebar-toggle { align-items: center; background: var(--mmp-bg); border: 1px solid var(--input, var(--mmp-grid)); border-radius: calc(var(--radius, 8px) - 2px); color: var(--mmp-muted); cursor: pointer; display: inline-flex; flex: 0 0 auto; font: 700 14px/1 var(--text-font, sans-serif); height: 26px; justify-content: center; padding: 0; width: 28px; }
 .mmp-sidebar-toggle:hover { border-color: var(--primary, var(--mmp-amber)); color: var(--primary, var(--mmp-amber)); }
 .mmp-sidebar-toggle:focus-visible { outline: 2px solid var(--ring, var(--mmp-amber)); outline-offset: 2px; }
 .mmp-sidebar-toggle::before { content: "‹"; }
@@ -30,7 +36,7 @@
 .mmp-counter { color: var(--mmp-muted); font-size: 11px; letter-spacing: .04em; text-align: right; }
 .mmp-controls { background: var(--mmp-surface); border-bottom: 1px solid var(--mmp-grid); display: grid; gap: 10px 14px; grid-template-columns: minmax(90px, .65fr) minmax(100px, .75fr) minmax(150px, 1.2fr) minmax(150px, 1.2fr); padding: 12px 22px; }
 .mmp-control { color: var(--mmp-muted); display: flex; flex-direction: column; font: 9px/1.2 var(--monospace-font, ui-monospace, SFMono-Regular, Menlo, monospace); gap: 5px; letter-spacing: .08em; min-width: 0; text-transform: uppercase; }
-.mmp-control > select, .mmp-control > input { appearance: none; background: var(--background, #fff); border: 1px solid var(--input, var(--mmp-grid)); border-radius: calc(var(--radius, 8px) - 2px); color: var(--mmp-graphite); font: 12px/1.2 var(--text-font, sans-serif); min-height: 32px; padding: 6px 8px; text-transform: none; width: 100%; }
+.mmp-control > select, .mmp-control > input { appearance: none; background: var(--mmp-bg); border: 1px solid var(--input, var(--mmp-grid)); border-radius: calc(var(--radius, 8px) - 2px); color: var(--mmp-graphite); font: 12px/1.2 var(--text-font, sans-serif); min-height: 32px; padding: 6px 8px; text-transform: none; width: 100%; }
 .mmp-control > select { background-image: linear-gradient(45deg, transparent 50%, var(--mmp-muted) 50%), linear-gradient(135deg, var(--mmp-muted) 50%, transparent 50%); background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px; background-repeat: no-repeat; background-size: 4px 4px, 4px 4px; padding-right: 25px; }
 .mmp-control > input:focus-visible, .mmp-control > select:focus-visible, .mmp-chipset input:focus-visible + span, .mmp-range-wrap input:focus-visible { outline: 2px solid var(--ring, var(--mmp-amber)); outline-offset: 2px; }
 .mmp-range-wrap { align-items: center; display: grid; gap: 8px; grid-template-columns: 1fr 38px; min-height: 32px; }
@@ -39,7 +45,7 @@
 .mmp-chipset { display: flex; flex-wrap: wrap; gap: 4px; min-height: 32px; }
 .mmp-chipset label { cursor: pointer; }
 .mmp-chipset input { height: 1px; opacity: 0; position: absolute; width: 1px; }
-.mmp-chipset span { align-items: center; background: var(--background, #fff); border: 1px solid var(--input, var(--mmp-grid)); border-radius: calc(var(--radius, 8px) - 2px); color: var(--mmp-muted); display: inline-flex; font: 600 10px/1 var(--monospace-font, ui-monospace, SFMono-Regular, Menlo, monospace); height: 30px; justify-content: center; min-width: 30px; padding: 0 7px; }
+.mmp-chipset span { align-items: center; background: var(--mmp-bg); border: 1px solid var(--input, var(--mmp-grid)); border-radius: calc(var(--radius, 8px) - 2px); color: var(--mmp-muted); display: inline-flex; font: 600 10px/1 var(--monospace-font, ui-monospace, SFMono-Regular, Menlo, monospace); height: 30px; justify-content: center; min-width: 30px; padding: 0 7px; }
 .mmp-chipset input:checked + span { background: var(--primary, var(--mmp-amber)); border-color: var(--primary, var(--mmp-amber)); color: var(--primary-foreground, #f8fafc); }
 .mmp-search-control { grid-column: span 2; }
 .mmp-legend { align-items: center; background: var(--mmp-paper); border-bottom: 1px solid var(--mmp-grid); display: flex; flex-wrap: wrap; font-size: 10px; gap: 16px; padding: 8px 22px; text-transform: uppercase; }
@@ -60,8 +66,8 @@
 .mmp-query-structure div, .mmp-query-structure svg { height: 100%; width: 100%; }
 .mmp-query-placeholder { align-items: center; color: var(--mmp-muted); display: flex; font: 11px/1.5 "SFMono-Regular", Consolas, monospace; justify-content: center; text-align: center; white-space: pre-line; }
 .mmp-query-label { fill: var(--mmp-graphite); font-size: 11px; font-weight: 700; letter-spacing: .16em; }
-.mmp-query-node, .mmp-from-node, .mmp-rule-node { cursor: help; outline: none; }
-.mmp-query-node:hover .mmp-query-ring, .mmp-query-node:focus .mmp-query-ring, .mmp-from-node:hover .mmp-from-halo, .mmp-from-node:focus .mmp-from-halo, .mmp-rule-node:hover circle, .mmp-rule-node:focus circle { stroke: var(--mmp-amber); stroke-width: 3; }
+.mmp-query-node, .mmp-from-node, .mmp-rule-node { cursor: help; }
+.mmp-query-node:hover .mmp-query-ring, .mmp-from-node:hover .mmp-from-halo, .mmp-rule-node:hover circle { stroke: var(--mmp-amber); stroke-width: 3; }
 .mmp-from-spoke { stroke: color-mix(in srgb, var(--mmp-amber) 45%, var(--mmp-grid)); stroke-width: 1.4; }
 .mmp-from-halo { fill: none; stroke: transparent; stroke-width: 2; }
 .mmp-from-core { fill: color-mix(in srgb, var(--mmp-amber) 8%, var(--mmp-paper)); stroke: none; }
@@ -78,12 +84,13 @@
 .mmp-rule-node tspan:last-child { fill: var(--mmp-muted); font-size: 8px; }
 .mmp-product-edge { opacity: .62; }
 .mmp-product-node { cursor: pointer; outline: none; }
-.mmp-product-node rect { fill: var(--mmp-paper); stroke: var(--input, var(--mmp-grid)); stroke-width: 1.2; transition: stroke-width 120ms ease, stroke 120ms ease; }
-.mmp-product-node text { fill: var(--mmp-muted); font-size: 7px; font-weight: 700; }
+.mmp-product-node rect { fill: var(--mmp-plate); stroke: var(--input, var(--mmp-grid)); stroke-width: 1.2; transition: stroke-width 120ms ease, stroke 120ms ease; }
+.mmp-product-node text { fill: var(--mmp-plate-text); font-size: 7px; font-weight: 700; }
 .mmp-product-node .mmp-product-placeholder { font-size: 18px; font-weight: 600; }
-.mmp-product-node:hover rect, .mmp-product-node:focus rect { stroke: var(--mmp-amber); stroke-width: 3; }
-.mmp-product-node.is-selected rect { stroke: var(--mmp-graphite); stroke-width: 3.5; }
-.mmp-tooltip { background: var(--popover, var(--background, #fff)); border: 1px solid var(--border, #e2e8f0); border-radius: var(--radius, 8px); box-shadow: 0 10px 24px color-mix(in srgb, var(--foreground, #0f172a) 18%, transparent); box-sizing: border-box; color: var(--popover-foreground, var(--mmp-graphite)); max-width: calc(100vw - 32px); padding: 16px; pointer-events: none; position: absolute; z-index: 30; }
+.mmp-product-node:hover rect { stroke: var(--mmp-amber); stroke-width: 3; }
+.mmp-product-node.is-selected rect { stroke: var(--mmp-selected); stroke-width: 3.5; }
+.mmp-product-node:focus-visible rect { stroke: var(--mmp-focus); stroke-width: 4.5; }
+.mmp-tooltip { background: var(--mmp-popover); border: 1px solid var(--mmp-grid); border-radius: var(--radius, 8px); box-shadow: 0 10px 24px color-mix(in srgb, var(--foreground, #0f172a) 18%, transparent); box-sizing: border-box; color: var(--popover-foreground, var(--mmp-graphite)); max-width: calc(100vw - 32px); padding: 16px; pointer-events: none; position: absolute; z-index: 30; }
 .mmp-tooltip[hidden] { display: none; }
 .mmp-tooltip-product { display: grid; gap: 18px; grid-template-columns: minmax(200px, 250px) minmax(230px, 1fr); width: min(560px, calc(100vw - 32px)); }
 .mmp-tooltip-molecule { align-items: center; border-right: 1px solid var(--mmp-grid); display: flex; min-height: clamp(120px, 24vh, 205px); padding-right: 17px; }
@@ -144,3 +151,13 @@
   .mmp-tooltip-query-molecule svg { max-height: 240px; }
 }
 @media (prefers-reduced-motion: reduce) { .mmp-product-node rect { transition: none; } }
+
+/* Dark themes: marimo toggles `.dark` (or data-theme="dark") on an ancestor and
+   redefines the shadcn tokens used above; the media query covers hosts that only
+   follow the OS preference. RDKit draws black bonds on a transparent background,
+   so depictions always sit on a light rounded backing. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-theme="light"]) .mmp-instrument { --mmp-gain: var(--green-11, #3dd68c); --mmp-loss: var(--red-11, #ff8589); --mmp-focus: var(--ring, #fbbf24); --mmp-selected: var(--primary, #60a5fa); --mmp-plate: #f8fafc; --mmp-plate-text: #475569; }
+}
+.dark .mmp-instrument, [data-theme="dark"] .mmp-instrument { --mmp-gain: var(--green-11, #3dd68c); --mmp-loss: var(--red-11, #ff8589); --mmp-focus: var(--ring, #fbbf24); --mmp-selected: var(--primary, #60a5fa); --mmp-plate: #f8fafc; --mmp-plate-text: #475569; }
+.mmp-query-structure svg, .mmp-tooltip-molecule svg, .mmp-tooltip-query-molecule svg, .mmp-tooltip-from-molecule svg, .mmp-tooltip-fragment svg { background: #fff; border-radius: 6px; box-sizing: border-box; padding: 4px; }

@@ -790,7 +790,7 @@ def test_state_has_mmpdb_property_records_and_compact_repr():
     assert len(repr(state)) < 300
     assert "selected_id=" in repr(state)
     with pytest.raises((AttributeError, TypeError)):
-        state.has_mmpdb = True
+        state.has_mmpdb = True  # ty: ignore[invalid-assignment]
     with pytest.raises(TypeError):
         TransformGraph(dataset, **cast(Any, {"property": "pIC50"}))
     with pytest.raises(TypeError):

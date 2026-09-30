@@ -574,6 +574,7 @@ function buildShell(
   stage.setAttribute("aria-description", "Drag with a mouse or pen, or use scrollbars, to pan the graph");
   const canvas = svgElement("svg", { viewBox: "0 0 1100 1100", role: "group" });
   canvas.setAttribute("aria-label", "Query at center, source-fragment groups and transformation rules in middle rings, and products in outer rings");
+  canvas.setAttribute("aria-description", "Products are one Tab stop. Use arrow keys to move clockwise or counter-clockwise, Home and End to jump, Enter or Space to select");
   stage.append(canvas);
 
   const tooltip = document.createElement("aside");
@@ -799,10 +800,16 @@ function hideTooltip(refs: ViewRefs, node: Element | null = null): void {
   delete refs.tooltip.dataset.tooltipKey;
 }
 
+function setRovingNode(nodes: SVGElement[], target: SVGElement): void {
+  for (const node of nodes) node.setAttribute("tabindex", node === target ? "0" : "-1");
+}
+
 function updateSelection(model: AnywidgetModel, refs: ViewRefs): void {
   const selected = model.get("selected_id");
   for (const node of refs.canvas.querySelectorAll<SVGElement>(".mmp-product-node")) {
-    node.classList.toggle("is-selected", String(node.dataset.productId) === String(selected));
+    const isSelected = String(node.dataset.productId) === String(selected);
+    node.classList.toggle("is-selected", isSelected);
+    node.setAttribute("aria-pressed", isSelected ? "true" : "false");
   }
 }
 
@@ -1019,6 +1026,9 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
   updateControls(model, refs.controls, refs.controlSync.current());
   refs.counter.textContent = `${data.shown || 0} / ${data.matching || 0} PRODUCTS · ${model.get("property_name") || "PROPERTY"}`;
   hideTooltip(refs);
+  const previousRoving = refs.canvas.querySelector<SVGElement>('.mmp-product-node[tabindex="0"]')?.dataset.productId ?? null;
+  const focusRoot = refs.canvas.getRootNode() as Document | ShadowRoot;
+  const hadFocus = Boolean(focusRoot.activeElement && refs.canvas.contains(focusRoot.activeElement));
   refs.canvas.replaceChildren();
 
   const fromLayout = radialRings(fromGroups, 178, 80, 14);
@@ -1046,7 +1056,6 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
 
   const queryNode = svgElement("g", {
     class: "mmp-query-node",
-    tabindex: "0",
     role: "img",
     "aria-label": data.querySmiles ? `Query compound; SMILES: ${data.querySmiles}` : "Query structure not attached",
   });
@@ -1069,9 +1078,6 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
     kind: "query",
     fill: (tooltip) => fillQueryTooltip(data, depiction(data.queryDepictionId), tooltip),
   });
-  queryNode.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") hideTooltip(refs);
-  }, { signal: refs.signal });
   refs.canvas.append(queryNode);
 
   fromGroups.forEach((group) => {
@@ -1080,7 +1086,6 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
     refs.canvas.insertBefore(line, queryNode);
     const node = svgElement("g", {
       class: "mmp-from-node",
-      tabindex: "0",
       role: "img",
       "aria-label": `Source fragment ${group.from}; median rule effect ${group.aggregateMedian.toFixed(3)}; range ${group.effectMin.toFixed(3)} to ${group.effectMax.toFixed(3)}; ${group.gainCount} favorable, ${group.lossCount} unfavorable, and ${group.neutralCount} neutral rule environments; ${group.productCount} visible products; summed support ${group.totalSupport}`,
     });
@@ -1100,9 +1105,6 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
       kind: "from",
       fill: (tooltip) => fillFromTooltip(group, depiction(group.fromDepictionId), tooltip),
     });
-    node.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") hideTooltip(refs);
-    }, { signal: refs.signal });
     refs.canvas.append(node);
   });
 
@@ -1126,7 +1128,6 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
     refs.canvas.insertBefore(line, queryNode);
     const node = svgElement("g", {
       class: "mmp-rule-node",
-      tabindex: "0",
       role: "img",
       "aria-label": `Rule environment ${group.environmentId}; ${group.from} to ${group.to}; radius ${group.radius}; median effect ${group.median.toFixed(3)}; ${group.evidence} evidence with ${group.count} pairs`,
     });
@@ -1149,14 +1150,15 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
         tooltip,
       ),
     });
-    node.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") hideTooltip(refs);
-    }, { signal: refs.signal });
     refs.canvas.append(node);
   });
 
+  // Product nodes form one roving-tabindex group, navigated in on-screen
+  // clockwise order (from 12 o'clock) using the layout angles computed above.
+  const navNodes: SVGElement[] = [];
+  const navAngles = new Map<SVGElement, { angle: number; radius: number }>();
   products.forEach((product, index) => {
-    const { x, y } = requiredPosition(productPositions, product.id);
+    const { x, y, angle, radius } = requiredPosition(productPositions, product.id);
     const groupPosition = requiredPosition(positions, product.group);
     const edge = svgElement("line", {
       x1: groupPosition.x, y1: groupPosition.y, x2: x, y2: y,
@@ -1169,7 +1171,8 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
 
     const node = svgElement("g", {
       class: `mmp-product-node${String(selected) === String(product.id) ? " is-selected" : ""}`,
-      tabindex: "0", role: "button",
+      tabindex: "-1", role: "button",
+      "aria-pressed": "false",
       "aria-label": accessibleProductLabel(product),
       "data-index": index,
       "data-product-id": String(product.id),
@@ -1196,22 +1199,49 @@ function renderGraph(model: AnywidgetModel, refs: ViewRefs): void {
       kind: "product",
       fill: (tooltip) => fillProductTooltip(product, depiction(product.depictionId), tooltip),
     });
-    node.addEventListener("click", () => selectProduct(model, product.id), { signal: refs.signal });
+    node.addEventListener("focus", () => setRovingNode(navNodes, node), { signal: refs.signal });
+    node.addEventListener("click", () => {
+      setRovingNode(navNodes, node);
+      selectProduct(model, product.id);
+    }, { signal: refs.signal });
     node.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         hideTooltip(refs);
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         selectProduct(model, product.id);
-      } else if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) {
+      } else if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
-        const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
-        const nodes = [...refs.canvas.querySelectorAll<SVGElement>(".mmp-product-node")];
-        nodes[(index + step + nodes.length) % nodes.length]?.focus();
+        const current = navNodes.indexOf(node);
+        let target = 0;
+        if (event.key === "End") target = navNodes.length - 1;
+        else if (event.key !== "Home") {
+          const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
+          target = (current + step + navNodes.length) % navNodes.length;
+        }
+        const next = navNodes[target];
+        if (next) {
+          setRovingNode(navNodes, next);
+          next.focus();
+        }
       }
     }, { signal: refs.signal });
+    navNodes.push(node);
+    // Clockwise from 12 o'clock: layout angles start at -PI/2 and grow clockwise on screen.
+    navAngles.set(node, { angle: (angle + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI), radius });
     refs.canvas.append(node);
   });
+  navNodes.sort((left, right) => {
+    const a = navAngles.get(left);
+    const b = navAngles.get(right);
+    return (a?.angle ?? 0) - (b?.angle ?? 0) || (a?.radius ?? 0) - (b?.radius ?? 0);
+  });
+  const byId = (id: string | null) => (id === null ? undefined : navNodes.find((node) => node.dataset.productId === id));
+  const rovingStart = byId(previousRoving) ?? byId(selected === null || selected === undefined ? null : String(selected)) ?? navNodes[0];
+  if (rovingStart) {
+    setRovingNode(navNodes, rovingStart);
+    if (hadFocus) rovingStart.focus();
+  }
   updateSelection(model, refs);
   refs.notices.replaceChildren();
   if (hasMissingDepictions) addNotice(refs.notices, "Some molecule depictions are unavailable.", "warn");

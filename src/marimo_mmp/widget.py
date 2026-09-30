@@ -356,6 +356,11 @@ class TransformGraph(anywidget.AnyWidget):
             raise TypeError("TransformGraph expects a TransformDataset")
         if not isinstance(highlight_changes, bool):
             raise TypeError("highlight_changes must be a boolean")
+        unknown = sorted(set(kwargs) - set(type(self).class_trait_names()))
+        if unknown:
+            raise TypeError(
+                f"TransformGraph got unexpected keyword arguments: {', '.join(unknown)}"
+            )
         if direction not in ("higher", "lower"):
             raise ValueError("direction must be higher or lower")
         view = dataset.view(
