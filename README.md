@@ -9,11 +9,24 @@ graph: query compound, transformation rules, and generated products. Filter by
 effect and support, select products, and inspect source pairs. It uses anywidget;
 marimo is optional. Packaged JavaScript and CSS need no CDN or runtime npm.
 
+## License
+
+Code and documentation are licensed under the [MIT License](LICENSE).
+The ChEMBL-derived example data retains its separate data terms; see
+[NOTES.md](NOTES.md#public-sources) for provenance and attribution.
+
 ## Quickstart
 
-Requires Python ≥3.11. From a checkout, run `npm ci` before
-`pip install '.[notebook]'` (or `pip install .` for other anywidget hosts).
-For development, use the contributor setup below.
+Requires Python ≥3.11. Install with pip:
+
+```
+pip install 'marimo-mmp[notebook]'
+```
+Or with uv:
+```bash
+uv add 'marimo-mmp[notebook]'
+```
+
 
 ```python
 import marimo as mo
@@ -68,8 +81,10 @@ substructure of each product and the query; subsequent renders reuse cached SVGs
 TSV/CSV, optionally gzipped; `from_df` accepts pandas DataFrames. Both validate
 `ID`, `SMILES`, and mmpdb statistic columns and discover property families.
 Invalid transform data raises `TransformValidationError`. Optional MMPDBs are
-validated and opened read-only during loading. Source pairs for every transform
-and property, including pairs with missing values, are stored in memory;
+validated and opened read-only during loading. Duplicate column names, empty
+rule fragments, negative standard deviations, p-values outside `[0, 1]`, and
+out-of-order min/quartile/median/max summaries are rejected. Source pairs for
+every transform and property, including pairs with missing values, are stored in memory;
 `source_pairs()` needs no further database access. The database file can be
 removed after loading. `dataset.mmpdb_path` retains its original path as source
 metadata. Larger provenance sets increase loading time and memory use.
@@ -123,9 +138,3 @@ edits, run `npm run build`, or `npm run dev` to watch. Runtime assets in
 `src/marimo_mmp/static/` are gitignored; Hatch builds missing assets and includes
 them in wheels/sdists. Use `uv run hatch version [VERSION]` to inspect/update the
 version. Ruff also runs via pre-commit.
-
-The H1 example uses exact ChEMBL IC50 records and median
-`pIC50 = 9 - log10(IC50_nM)`. Rebuild `data/processed/h1_ic50.mmpdb` with
-`uv run python scripts/h1_pipeline.py` (network required; slow); explore with
-`uv run marimo edit notebooks/h1_mmpdb.py`. [NOTES.md](NOTES.md) covers methodology,
-provenance, and outputs.

@@ -16,9 +16,17 @@ concurrency:
 
 jobs:
   test:
-    name: Lint, test, and build
-    runs-on: ubuntu-latest
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,8 +36,10 @@ jobs:
       - run: npm ci
       - run: npm run check
       - uses: astral-sh/setup-uv@v6
-      - run: uv python install 3.11
-      - run: uv sync --locked --python 3.11 --group dev
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv python install "${{ matrix.python-version }}"
+      - run: uv sync --locked --group dev
       - name: Check Python lint
         run: uv run ruff check src tests scripts
       - name: Check Python formatting

@@ -1,8 +1,9 @@
 import hashlib
 import json
 import re
+from collections.abc import MutableMapping
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, asdict
+from dataclasses import FrozenInstanceError, asdict, replace
 from pathlib import Path
 from statistics import median
 from typing import cast
@@ -14,6 +15,7 @@ import traitlets
 
 from marimo_mmp import (
     EvidenceThresholds,
+    PropertyStats,
     TransformDataset,
     TransformFilters,
     TransformGraph,
@@ -569,6 +571,27 @@ def test_transform_graph_uses_standard_reactive_marimo_wrapper():
     )
     assert clone.widget._control_request == {}
     assert clone.widget._control_response == {"revision": 0, "ok": True, "error": None}
+
+
+def test_graph_state_properties_cannot_mutate_the_snapshot_or_dataset():
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    graph = TransformGraph(dataset.view(max_nodes=1))
+    snapshot = graph.state
+    stats = snapshot.selected_stats
+    assert stats is not None
+    record = snapshot.shown_compounds[0]
+    properties = cast(MutableMapping[str, PropertyStats], record.properties)
+    rows = snapshot.rows()
+    with pytest.raises(TypeError):
+        properties[snapshot.property_name] = replace(stats, median=999)
+    with pytest.raises(TypeError):
+        del properties[snapshot.property_name]
+    assert snapshot.selected_stats == stats
+    dataset_record = next(item for item in dataset.records if item.id == record.id)
+    assert dataset_record.properties[snapshot.property_name] == stats
+    assert snapshot.rows() == rows
+    assert graph.data["products"][0]["median"] == stats.median
+    assert deepcopy(graph).state == snapshot
 
 
 def test_transform_graph_requires_transform_view():

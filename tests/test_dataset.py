@@ -4,6 +4,8 @@ import csv
 import gzip
 import io
 import sqlite3
+from collections.abc import MutableMapping
+from copy import deepcopy
 from pathlib import Path
 from typing import cast
 
@@ -13,7 +15,9 @@ import pytest
 from marimo_mmp import (
     EvidenceThresholds,
     EvidenceTier,
+    PropertyStats,
     TransformDataset,
+    TransformRecord,
     TransformValidationError,
 )
 
@@ -149,6 +153,134 @@ def test_invalid_original_smiles_is_rejected():
         TransformDataset.from_tsv(first_row_text().encode(), original_smiles="bad[")
 
 
+@pytest.fixture
+def single_transform_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "ID": "1",
+                "SMILES": "CCO",
+                "x_from_smiles": "[*:1]C",
+                "x_to_smiles": "[*:1]O",
+                "x_radius": 0,
+                "x_rule_environment_id": 1,
+                "x_count": 2,
+                "x_std": 1.0,
+                "x_p_value": 0.5,
+                "x_min": 0.0,
+                "x_q1": 1.0,
+                "x_median": 2.0,
+                "x_q3": 3.0,
+                "x_max": 4.0,
+            }
+        ]
+    )
+
+
+def load_frame(frame: pd.DataFrame, loader: str) -> TransformDataset:
+    if loader == "from_df":
+        return TransformDataset.from_df(frame)
+    return TransformDataset.from_tsv(frame.to_csv(sep="\t", index=False).encode())
+
+
+@pytest.mark.parametrize("loader", ["from_df", "from_tsv"])
+@pytest.mark.parametrize(
+    "changes, message",
+    [
+        ({"x_std": -1}, "x_std must be nonnegative"),
+        ({"x_p_value": -0.01}, "x_p_value must be between 0 and 1"),
+        ({"x_p_value": 1.01}, "x_p_value must be between 0 and 1"),
+        ({"x_min": 1.5}, "statistics must satisfy"),
+        ({"x_q1": 2.5}, "statistics must satisfy"),
+        ({"x_q3": 1.5}, "statistics must satisfy"),
+        ({"x_max": 2.5}, "statistics must satisfy"),
+        ({"x_min": 2.5, "x_q1": None}, "statistics must satisfy"),
+        ({"x_max": 1.5, "x_q3": None}, "statistics must satisfy"),
+    ],
+)
+def test_invalid_statistic_domains_and_order_are_rejected(
+    single_transform_frame, loader, changes, message
+):
+    for column, value in changes.items():
+        single_transform_frame[column] = value
+    with pytest.raises(TransformValidationError, match=message):
+        load_frame(single_transform_frame, loader)
+
+
+@pytest.mark.parametrize("loader", ["from_df", "from_tsv"])
+@pytest.mark.parametrize("p_value", [0.0, 1.0, None])
+def test_statistic_boundaries_and_missing_values_are_accepted(
+    single_transform_frame, loader, p_value
+):
+    for column in ("x_min", "x_q1", "x_median", "x_q3", "x_max"):
+        single_transform_frame[column] = -2.0
+    single_transform_frame["x_std"] = 0.0
+    single_transform_frame["x_p_value"] = p_value
+    # Missing optional columns still permit validation of the available values.
+    single_transform_frame = single_transform_frame.drop(columns=["x_q1", "x_q3"])
+    stats = load_frame(single_transform_frame, loader).records[0].properties["x"]
+    assert stats.std == 0.0
+    assert stats.p_value == p_value
+    assert stats.min == stats.median == stats.max == -2.0
+    assert stats.q1 is None and stats.q3 is None
+
+
+@pytest.mark.parametrize("columns", [("x_median", "x_median"), (1, "1")])
+def test_duplicate_normalized_dataframe_columns_are_rejected(
+    single_transform_frame, columns
+):
+    extra = pd.DataFrame([[10, 20]], columns=list(columns))
+    frame = pd.concat([single_transform_frame, extra], axis=1)
+    with pytest.raises(TransformValidationError, match="duplicate column names"):
+        TransformDataset.from_df(frame)
+
+
+@pytest.mark.parametrize("delimiter", ["\t", ","])
+def test_duplicate_text_headers_are_rejected(single_transform_frame, delimiter):
+    # pandas would otherwise rename a duplicate header before from_df sees it.
+    frame = pd.concat(
+        [single_transform_frame, single_transform_frame[["x_median"]]], axis=1
+    )
+    payload = frame.to_csv(sep=delimiter, index=False).encode()
+    with pytest.raises(TransformValidationError, match="duplicate column names"):
+        TransformDataset.from_tsv(payload)
+
+
+@pytest.mark.parametrize("loader", ["from_df", "from_tsv"])
+@pytest.mark.parametrize("column", ["x_from_smiles", "x_to_smiles"])
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_empty_rule_smiles_are_rejected(single_transform_frame, loader, column, blank):
+    single_transform_frame[column] = blank
+    with pytest.raises(TransformValidationError, match="invalid x rule SMILES"):
+        load_frame(single_transform_frame, loader)
+
+
+@pytest.mark.parametrize("fragment", ["[*:1]", "[H]", "[*:1][H]"])
+def test_dummy_and_hydrogen_rule_fragments_remain_valid(
+    single_transform_frame, fragment
+):
+    single_transform_frame["x_from_smiles"] = fragment
+    single_transform_frame["x_to_smiles"] = fragment
+    stats = TransformDataset.from_df(single_transform_frame).records[0].properties["x"]
+    assert stats.from_smiles == stats.to_smiles == fragment
+
+
+def test_record_properties_are_immutable_and_detached_from_constructor_input():
+    original = TransformDataset.from_tsv(first_row_text().encode()).records[0]
+    properties = dict(original.properties)
+    record = TransformRecord(original.id, original.smiles, properties)
+    properties.clear()
+    assert record.properties == original.properties
+    clone = deepcopy(record)
+    assert clone == record
+    for item in (record, clone):
+        mutable = cast(MutableMapping[str, PropertyStats], item.properties)
+        with pytest.raises(TypeError):
+            mutable["pIC50"] = original.properties["pIC50"]
+        with pytest.raises(TypeError):
+            del mutable["pIC50"]
+
+
 def test_evidence_tier_boundaries():
     assert EvidenceTier.from_count(1) is EvidenceTier.EXPLORATORY
     assert EvidenceTier.from_count(2) is EvidenceTier.MODERATE
@@ -282,6 +414,40 @@ def test_mmpdb_provenance_is_eager_directional_and_read_only(tmp_path):
     assert pairs[0].delta == pytest.approx(pairs[0].to_value - pairs[0].from_value)
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "question?name.mmpdb",
+        "hash#name.mmpdb",
+        "percent%23name.mmpdb",
+        "parent?#%25/copy.mmpdb",
+        "space and ünicode.mmpdb",
+    ],
+)
+def test_mmpdb_special_character_paths_preserve_provenance_and_files(
+    tmp_path: Path, relative_path: str
+):
+    payload = first_row_text().encode()
+    reference = TransformDataset.from_tsv(payload, mmpdb=DATABASE)
+    database = tmp_path / relative_path
+    database.parent.mkdir(parents=True, exist_ok=True)
+    original_bytes = DATABASE.read_bytes()
+    database.write_bytes(original_bytes)
+    database.chmod(0o444)
+    original_paths = set(tmp_path.rglob("*"))
+
+    dataset = TransformDataset.from_tsv(payload, mmpdb=database)
+
+    assert dataset.mmpdb_path == database
+    assert dataset.records == reference.records
+    record = dataset.records[0]
+    pairs = dataset.source_pairs(record.id, include_missing=True)
+    assert pairs
+    assert pairs == reference.source_pairs(record.id, include_missing=True)
+    assert database.read_bytes() == original_bytes
+    assert set(tmp_path.rglob("*")) == original_paths
+
+
 @pytest.mark.parametrize("loader", ["from_tsv", "from_df"])
 def test_all_source_pairs_remain_available_after_database_cleanup(tmp_path, loader):
     reference = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
@@ -403,10 +569,21 @@ def test_reversed_rule_swaps_source_pair_direction(tmp_path):
     database.write_bytes(DATABASE.read_bytes())
     direct = TransformDataset.from_tsv(first_row_text().encode(), mmpdb=DATABASE)
     row = direct.records[0].properties["pIC50"]
+    reversed_statistics = {}
+    for name, source in (
+        ("avg", "avg"),
+        ("min", "max"),
+        ("q1", "q3"),
+        ("median", "median"),
+        ("q3", "q1"),
+        ("max", "min"),
+    ):
+        value = getattr(row, source)
+        reversed_statistics[f"pIC50_{name}"] = "" if value is None else str(-value)
     reversed_data = mutate_first_row(
         pIC50_from_smiles=row.to_smiles,
         pIC50_to_smiles=row.from_smiles,
-        pIC50_median=str(-row.median),
+        **reversed_statistics,
     )
     reversed_dataset = TransformDataset.from_tsv(reversed_data, mmpdb=database)
     database.unlink()

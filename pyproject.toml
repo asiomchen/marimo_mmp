@@ -3,6 +3,8 @@ name = "marimo-mmp"
 dynamic = ["version"]
 description = "Reactive visualization of mmpdb transform results"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Anton Siomchen", email = "41703271+asiomchen@users.noreply.github.com" }
 ]
@@ -69,4 +71,5 @@ include = [
     "tsconfig.json",
     "pyproject.toml",
     "README.md",
+    "LICENSE",
 ]

@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import csv
 import gzip
 import io
 import math
 import sqlite3
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import closing
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from os import PathLike
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, BinaryIO, TextIO
 
 import pandas as pd
@@ -122,6 +126,18 @@ class TransformRecord:
     id: str
     smiles: str
     properties: Mapping[str, PropertyStats]
+
+    def __post_init__(self) -> None:
+        # Copy before wrapping so callers cannot mutate through their input dict.
+        object.__setattr__(self, "properties", MappingProxyType(dict(self.properties)))
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> TransformRecord:
+        # Mapping proxies cannot be deep-copied directly; rebuild the frozen record.
+        clone = TransformRecord(
+            self.id, self.smiles, deepcopy(dict(self.properties), memo)
+        )
+        memo[id(self)] = clone
+        return clone
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,13 +322,17 @@ class TransformDataset:
         Required columns are ``ID`` and ``SMILES`` plus, for each property,
         ``from_smiles``, ``to_smiles``, ``radius``, ``rule_environment_id``,
         ``count``, and ``median``. Blank optional statistics are retained as
-        ``None`` and summarized in ``TransformDataset.warnings``.
+        ``None`` and summarized in ``TransformDataset.warnings``. Column names
+        must be unique after conversion to strings, and rule SMILES must contain
+        atoms. Standard deviations must be nonnegative, p-values must be in
+        ``[0, 1]``, and available min/quartile/median/max values must be ordered.
         """
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("from_df expects a pandas DataFrame")
         selected_evidence_thresholds = EvidenceThresholds.coerce(evidence_thresholds)
         name = str(frame.attrs.get("name", "dataframe"))
         fields = tuple(str(column) for column in frame.columns)
+        _validate_columns(fields, name)
         if "ID" not in fields or "SMILES" not in fields:
             raise TransformValidationError(f"{name}: expected ID and SMILES columns")
         property_columns = _property_columns(fields)
@@ -364,9 +384,8 @@ class TransformDataset:
                     return cell(cells, columns.get(suffix, ""))
 
                 from_smiles, to_smiles = get("from_smiles"), get("to_smiles")
-                if (
-                    Chem.MolFromSmiles(from_smiles) is None
-                    or Chem.MolFromSmiles(to_smiles) is None
+                if not _valid_rule_smiles(from_smiles) or not _valid_rule_smiles(
+                    to_smiles
                 ):
                     raise TransformValidationError(
                         f"row {row_number}: invalid {property} rule SMILES"
@@ -391,6 +410,7 @@ class TransformDataset:
                     )
                     for suffix in _FLOAT_SUFFIXES
                 }
+                _validate_statistics(numbers, row_number, property)
                 median_value = numbers["median"]
                 assert median_value is not None
                 property_stats = PropertyStats(
@@ -682,6 +702,16 @@ def _frame_from_text(text: str, name: str) -> pd.DataFrame:
         raise TransformValidationError(f"{name}: transform file is empty")
     delimiter = "\t" if "\t" in first_line else ","
     try:
+        # Inspect the original header before pandas renames duplicate columns.
+        header = next(
+            (
+                row
+                for row in csv.reader(io.StringIO(text), delimiter=delimiter)
+                if any(field.strip() for field in row)
+            ),
+            [],
+        )
+        _validate_columns(header, name)
         frame = pd.read_csv(
             io.StringIO(text),
             delimiter=delimiter,
@@ -689,10 +719,51 @@ def _frame_from_text(text: str, name: str) -> pd.DataFrame:
             keep_default_na=False,
             skip_blank_lines=False,
         )
-    except pd.errors.ParserError as exc:
+    except (csv.Error, pd.errors.ParserError) as exc:
         raise TransformValidationError(f"{name}: {exc}") from exc
     frame.attrs["name"] = name
     return frame
+
+
+def _validate_columns(fields: Iterable[str], name: str) -> None:
+    duplicates = sorted(field for field, count in Counter(fields).items() if count > 1)
+    if duplicates:
+        raise TransformValidationError(
+            f"{name}: duplicate column names: {', '.join(repr(field) for field in duplicates)}"
+        )
+
+
+def _valid_rule_smiles(smiles: str) -> bool:
+    if not smiles:
+        return False
+    molecule = Chem.MolFromSmiles(smiles)
+    return molecule is not None and molecule.GetNumAtoms() > 0
+
+
+def _validate_statistics(
+    numbers: Mapping[str, float | None], row_number: int, property: str
+) -> None:
+    std = numbers["std"]
+    if std is not None and std < 0:
+        raise TransformValidationError(
+            f"row {row_number}: {property}_std must be nonnegative"
+        )
+    p_value = numbers["p_value"]
+    if p_value is not None and not 0 <= p_value <= 1:
+        raise TransformValidationError(
+            f"row {row_number}: {property}_p_value must be between 0 and 1"
+        )
+    previous: float | None = None
+    for suffix in ("min", "q1", "median", "q3", "max"):
+        value = numbers[suffix]
+        if value is None:
+            continue
+        if previous is not None and previous > value:
+            raise TransformValidationError(
+                f"row {row_number}: {property} statistics must satisfy "
+                "min <= q1 <= median <= q3 <= max for available values"
+            )
+        previous = value
 
 
 def _parse_float(
@@ -738,7 +809,7 @@ def _load_database(dataset: TransformDataset) -> None:
     path = dataset.mmpdb_path
     if not path.is_file():
         raise TransformValidationError(f"MMPDB file does not exist: {path}")
-    uri = f"file:{path.resolve().as_posix()}?mode=ro"
+    uri = f"{path.resolve().as_uri()}?mode=ro"
     try:
         with closing(sqlite3.connect(uri, uri=True)) as connection:
             connection.execute("PRAGMA query_only = ON")

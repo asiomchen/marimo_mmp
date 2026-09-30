@@ -113,6 +113,8 @@ Direct Python assignments can trigger separate refreshes. Browser gestures use t
 
 `graph.state` returns an immutable `TransformGraphState` snapshot derived from synchronized traits. It resolves payload product IDs to typed records and exposes selection, property statistics, filters, counts, warnings, rows, and in-memory source pairs. `shown_compounds` follows payload order; radial positions are a separate browser calculation.
 
+Record property mappings copy their constructor input and expose it read-only. Deep copies rebuild these mappings so dataset and widget copies preserve immutability.
+
 Raw widget copies clone the dataset and construct a new widget with independent transport state. They preserve public state and the highlighting setting while resetting control revisions and the private handshake. The marimo wrapper’s deep-copy path uses this widget implementation.
 
 ## Depictions and rendering cost
