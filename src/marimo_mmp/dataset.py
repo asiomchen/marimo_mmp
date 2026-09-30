@@ -711,14 +711,14 @@ class TransformDataset:
         property-specific transform statistics. Set ``include_missing=True``
         to inspect every structural pair in the rule environment instead.
         """
-        if self.mmpdb_path is None:
-            return ()
         property = property or self.properties[0]
         record = next(
             (item for item in self.records if item.id == str(record_id)), None
         )
         if record is None or property not in record.properties:
             raise KeyError(f"unknown transform ID/property: {record_id!r}/{property!r}")
+        if self.mmpdb_path is None:
+            return ()
         pairs = self._source_pairs[(record.id, property)]
         if include_missing:
             return pairs

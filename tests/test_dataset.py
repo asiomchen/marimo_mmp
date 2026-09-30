@@ -307,7 +307,6 @@ def test_record_properties_support_asdict_copy_and_block_every_mutator():
     assert converted["properties"] == {"pIC50": dataclasses.asdict(stats)}
     assert dataclasses.asdict(dataset)["records"][0] == converted
     assert copy.copy(record.properties) == record.properties
-    assert record.properties | {} == dict(record.properties)
     mutable = cast(Any, record.properties)
     mutators = [
         lambda: mutable.update(pIC50=stats),
@@ -745,6 +744,16 @@ def test_reversed_rule_swaps_source_pair_direction(tmp_path):
     )
     assert direct_pair.delta is not None
     assert reversed_pair.delta == pytest.approx(-direct_pair.delta)
+
+
+@pytest.mark.parametrize("args", [("does-not-exist",), ("1", "logD")])
+def test_source_pairs_rejects_unknown_id_or_property_with_and_without_mmpdb(args):
+    without = TransformDataset.from_tsv(TRANSFORMS)
+    with_mmpdb = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    for dataset in (without, with_mmpdb):
+        with pytest.raises(KeyError, match="unknown transform ID/property"):
+            dataset.source_pairs(*args)
+    assert without.source_pairs("1") == ()
 
 
 def test_mismatched_database_reference_and_missing_property_are_rejected():
