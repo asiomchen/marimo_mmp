@@ -5,7 +5,7 @@
 Python anywidget package (`marimo-mmp`) visualizing mmpdb matched-molecular-pair transforms, with a TypeScript frontend bundled by esbuild. Core package does not depend on marimo; notebooks use the `notebook` extra.
 
 - `src/marimo_mmp/` — Python package (`dataset.py`, `widget.py`, `depiction.py`)
-- `frontend/` — strict TypeScript + CSS sources; single widget module `transform_graph.ts`
+- `frontend/` — strict TypeScript + CSS sources; esbuild entry `transform_graph.ts` imports modules from `frontend/transform_graph/`
 - `notebooks/` — marimo notebooks; run with `uv run marimo edit notebooks/<name>.py`
 - `scripts/` — package build and distribution verification tools
 - `WIDGET_ARCHITECTURE.md` — architecture reference; `README.md` documents example-data provenance

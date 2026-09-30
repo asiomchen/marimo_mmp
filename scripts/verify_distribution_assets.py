@@ -13,6 +13,7 @@ RUNTIME_ASSETS = (
 )
 SDIST_SOURCES = (
     "frontend/transform_graph.ts",
+    "frontend/transform_graph/graph.ts",
     "frontend/transform_graph.css",
     "package.json",
     "package-lock.json",

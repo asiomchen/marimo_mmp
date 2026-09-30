@@ -38,7 +38,8 @@ The implementation is divided across these files:
 | [dataset.py](src/marimo_mmp/dataset.py) | Transform validation, filtering, ranking, and in-memory source-pair provenance |
 | [widget.py](src/marimo_mmp/widget.py) | Payload construction, synchronized traits, atomic controls, typed state, and copies |
 | [depiction.py](src/marimo_mmp/depiction.py) | Cached RDKit SVG drawing, optional changed-atom matching, and SVG sanitization |
-| [transform_graph.ts](frontend/transform_graph.ts) | AFM lifecycle, controls, radial layout, selection, tooltips, and host sizing |
+| [transform_graph.ts](frontend/transform_graph.ts) | Bundle entry: AFM lifecycle, model listeners, and view cleanup |
+| [transform_graph/](frontend/transform_graph/) | `types`, `controls` (control sync and rail), `shell`, `graph` (radial rendering), `layout`, `tooltips`, `selection` (roving focus), `viewport` (host sizing and drag-pan), `dom`, `encoding`, `depiction` |
 | [transform_graph.css](frontend/transform_graph.css) | Theme tokens, responsive layout, focus states, and reduced motion |
 | [transform_explorer.py](notebooks/transform_explorer.py) | Upload handling and reactive graph, provenance, table, and export cells |
 | [hatch_build.py](scripts/hatch_build.py) | Build missing frontend assets before packaging |

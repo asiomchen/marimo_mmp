@@ -87,7 +87,13 @@ def test_graph_topology_payload_and_local_assets():
     assert graph.state.evidence_thresholds == EvidenceThresholds()
     assert len(json.dumps(graph.data, separators=(",", ":")).encode()) < 30_000
     assert graph.height == 1220
-    frontend_source = (ROOT / "frontend" / "transform_graph.ts").read_text()
+    frontend_source = "\n".join(
+        path.read_text()
+        for path in [
+            ROOT / "frontend" / "transform_graph.ts",
+            *sorted((ROOT / "frontend" / "transform_graph").glob("*.ts")),
+        ]
+    )
     css_source = (ROOT / "frontend" / "transform_graph.css").read_text()
     esm_source = graph._esm
     assert isinstance(esm_source, str)

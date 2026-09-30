@@ -93,8 +93,7 @@ packages = ["src/marimo_mmp"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "frontend/transform_graph.ts",
-    "frontend/transform_graph.css",
+    "frontend",
     "scripts/hatch_build.py",
     "src/marimo_mmp",
     "package.json",
