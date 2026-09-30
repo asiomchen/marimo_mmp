@@ -1,0 +1,72 @@
+[project]
+name = "marimo-mmp"
+dynamic = ["version"]
+description = "Reactive visualization of mmpdb transform results"
+readme = "README.md"
+authors = [
+    { name = "Anton Siomchen", email = "41703271+asiomchen@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anywidget>=0.9.18",
+    "mmpdb>=3.1.4",
+    "pandas>=3.0.6",
+    "rdkit>=2026.3.5",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "marimo>=0.24.0",
+]
+
+[dependency-groups]
+dev = [
+    "hatch>=1.18",
+    "marimo>=0.24.0",
+    "pytest>=8.4.0",
+    "ruff==0.16.1",
+    "ty>=0.0.75",
+]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["notebooks/*", "studies/*"]
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "I"]
+
+[tool.ty.src]
+include = ["src", "tests", "scripts"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/marimo_mmp/__init__.py"
+
+[tool.hatch.build]
+artifacts = [
+    "src/marimo_mmp/static/transform_graph.js",
+    "src/marimo_mmp/static/transform_graph.css",
+]
+
+[tool.hatch.build.hooks.custom]
+path = "scripts/hatch_build.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/marimo_mmp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "frontend/transform_graph.ts",
+    "frontend/transform_graph.css",
+    "scripts/hatch_build.py",
+    "src/marimo_mmp",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "pyproject.toml",
+    "README.md",
+]

@@ -1,0 +1,15 @@
+{
+  "chembl_version": "ChEMBL_37",
+  "compounds": 107,
+  "database_compounds": 74,
+  "direct_binding_assays": 563,
+  "environments": 3189,
+  "fragmentations": 5166,
+  "output_database": "data/processed/h1_ic50.mmpdb",
+  "pairs": 3510,
+  "raw_assays": 716,
+  "raw_ic50_activities": 245,
+  "retained_activity_records": 117,
+  "retrieved_at_utc": "2026-08-26T18:43:44+00:00",
+  "rules": 508
+}

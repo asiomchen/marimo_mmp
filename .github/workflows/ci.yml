@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, test, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - uses: astral-sh/setup-uv@v6
+      - run: uv python install 3.11
+      - run: uv sync --locked --python 3.11 --group dev
+      - name: Check Python lint
+        run: uv run ruff check src tests scripts
+      - name: Check Python formatting
+        run: uv run ruff format --check src tests scripts
+      - run: uv run ty check --output-format github
+      - run: uv run pytest
+      - run: uv run marimo check --strict notebooks/*.py
+      - name: Build from generated-asset-free checkout
+        run: |
+          rm -f src/marimo_mmp/static/transform_graph.js
+          rm -f src/marimo_mmp/static/transform_graph.css
+          uv run hatch build --clean
+      - run: uv run python scripts/verify_distribution_assets.py dist/*

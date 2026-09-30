@@ -1,0 +1,20 @@
+{
+  "name": "marimo-mmp-widget-tests",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "esbuild frontend/transform_graph.ts --bundle --minify --format=esm --target=es2022 --outfile=src/marimo_mmp/static/transform_graph.js",
+    "dev": "npm run build -- --sourcemap=inline --watch",
+    "typecheck": "tsc --noEmit",
+    "test:js": "npm run build && node --test tests/js/*.test.js",
+    "check": "npm run typecheck && npm run test:js"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "happy-dom": "20.11.15",
+    "typescript": "5.9.2"
+  }
+}

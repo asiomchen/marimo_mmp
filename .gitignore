@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Rebuildable mmpdb intermediate
+data/processed/*.fragdb
+__marimo__
+node_modules/
+src/marimo_mmp/static/transform_graph.js
+src/marimo_mmp/static/transform_graph.css
