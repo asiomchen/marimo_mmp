@@ -14,7 +14,7 @@ Python anywidget package (`marimo-mmp`) visualizing mmpdb matched-molecular-pair
 
 Python (uv, 3.11): `uv sync --group dev`, then `uv run ty check`, `uv run pytest`.
 
-JS/TS (Node >= 20): `npm ci` first, then `npm run check` (tsc --noEmit + JS tests).
+JS/TS (Node >= 22; CI uses 24): `npm ci` first, then `npm run check` (tsc --noEmit + JS tests).
 
 Single test:
 
@@ -38,7 +38,7 @@ Notebook checks: `uv run marimo check --strict notebooks/*.py`.
 
 ## Style and conventions
 
-- Ruff runs via pre-commit (`ruff-check --fix`, `ruff-format`) with rules `E4,E7,E9,F,B`.
+- Ruff runs via pre-commit (`ruff-check --fix`, `ruff-format`)
 - Notebooks have per-file ignores `F841`, `B018` (marimo cell idiom) — do not "fix" those in `notebooks/*.py`.
 - `ty` type-checks `src`, `tests`, and `scripts` — keep scripts type-clean.
 - Published widget uses minified local assets only; no CDN or runtime npm dependency.

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "esbuild frontend/transform_graph.ts --bundle --minify --format=esm --target=es2022 --outfile=src/marimo_mmp/static/transform_graph.js",
