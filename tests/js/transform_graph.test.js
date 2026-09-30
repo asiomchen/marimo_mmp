@@ -303,6 +303,66 @@ test("data and depiction changes coalesce into one graph render", async () => {
 });
 
 
+test("toggling a radius keeps the same focused checkbox and rebuilds only for new radii", async () => {
+  const view = mount();
+  await settle();
+  const [first, second] = view.el.querySelectorAll('input[aria-label^="Radius"]');
+  second.focus();
+  second.checked = false;
+  second.dispatchEvent(new window.Event("change"));
+  await settle();
+
+  assert.deepEqual(view.model.get("_control_request").filters.radii, [0]);
+  const afterToggle = view.el.querySelectorAll('input[aria-label^="Radius"]');
+  assert.equal(afterToggle[1], second);
+  assert.equal(second.isConnected, true);
+  assert.equal(second.matches(":focus"), true);
+  assert.equal(first.checked, true);
+  assert.equal(second.checked, false);
+
+  const data = structuredClone(view.model.get("data"));
+  data.controlOptions.radii = [0, 1, 2];
+  view.model.set("data", data);
+  await settle();
+  const rebuilt = [...view.el.querySelectorAll('input[aria-label^="Radius"]')];
+  assert.deepEqual(rebuilt.map((input) => input.value), ["0", "1", "2"]);
+  view.cleanup();
+});
+
+
+test("a graph re-render does not overwrite search text that is being typed", async () => {
+  const view = mount();
+  await settle();
+  const search = view.el.querySelector('input[type="search"]');
+  search.focus();
+  search.value = "abc";
+  search.dispatchEvent(new window.Event("input"));
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  assert.equal(view.model.get("_control_request").filters.text, "abc");
+
+  search.value = "abcd";
+  search.dispatchEvent(new window.Event("input"));
+  view.model.set("data", structuredClone(view.model.get("data")));
+  await settle();
+  assert.equal(search.value, "abcd");
+
+  search.blur();
+  view.cleanup();
+});
+
+
+test("search text follows accepted filters while the input is idle", async () => {
+  const view = mount();
+  await settle();
+  const search = view.el.querySelector('input[type="search"]');
+  view.model.set("filters", { ...view.model.get("filters"), text: "from python" });
+  view.model.set("data", structuredClone(view.model.get("data")));
+  await settle();
+  assert.equal(search.value, "from python");
+  view.cleanup();
+});
+
+
 test("host abort and returned cleanup remove DOM, listeners, and pending search", async () => {
   const hostController = new AbortController();
   const view = mount(new AnywidgetModelStub(modelState()), hostController.signal);

@@ -146,6 +146,7 @@ interface Controls {
   radius: HTMLDivElement;
   quality: HTMLDivElement;
   search: HTMLInputElement;
+  searchPending: () => boolean;
   signal: AbortSignal;
   submitControls: (patch: ControlPatch) => void;
 }
@@ -452,7 +453,8 @@ function buildControls(
     labeledControl("Evidence", quality),
     labeledControl("Find", search, "mmp-search-control"),
   );
-  return { rail, property, optimum, direction, effect, effectOutput, support, supportOutput, radius, quality, search, signal, submitControls };
+  const searchPending = () => searchTimer != null;
+  return { rail, property, optimum, direction, effect, effectOutput, support, supportOutput, radius, quality, search, searchPending, signal, submitControls };
 }
 
 function updateControls(model: AnywidgetModel, controls: Controls, state = acceptedControls(model)): void {
@@ -479,27 +481,21 @@ function updateControls(model: AnywidgetModel, controls: Controls, state = accep
   controls.support.max = String(Math.max(options.maxSupport || 1, 1));
   controls.support.value = String(filters.min_support || 1);
   controls.supportOutput.value = controls.support.value;
-  controls.search.value = filters.text || "";
-
-  const selectedRadii = new Set(filters.radii == null ? (options.radii || []) : filters.radii);
-  controls.radius.replaceChildren();
-  for (const value of options.radii || []) {
-    const label = document.createElement("label");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.value = String(value);
-    checkbox.setAttribute("aria-label", `Radius ${value}`);
-    checkbox.checked = selectedRadii.has(value);
-    checkbox.addEventListener("change", () => {
-      const values = [...controls.radius.querySelectorAll<HTMLInputElement>("input:checked")].map((input) => Number(input.value));
-      controls.submitControls({ filters: { radii: values } });
-    }, { signal: controls.signal });
-    const text = document.createElement("span");
-    text.textContent = String(value);
-    label.append(checkbox, text);
-    controls.radius.append(label);
+  // Don't overwrite text the user is still typing or has not yet submitted.
+  if (!controls.search.matches(":focus") && !controls.searchPending()) {
+    controls.search.value = filters.text || "";
   }
-  const selectedQuality = new Set(filters.quality == null ? ["Strong", "Moderate", "Exploratory"] : filters.quality);
+
+  const radii = options.radii || [];
+  const selectedRadii = new Set(filters.radii == null ? radii : filters.radii);
+  const radiusInputs = [...controls.radius.querySelectorAll<HTMLInputElement>("input")];
+  // Update checkboxes in place so the one being toggled keeps keyboard focus.
+  if (radiusInputs.length === radii.length && radiusInputs.every((input, index) => input.value === String(radii[index]))) {
+    for (const checkbox of radiusInputs) checkbox.checked = selectedRadii.has(Number(checkbox.value));
+  } else {
+    rebuildRadii(controls, radii, selectedRadii);
+  }
+  const selectedQuality =new Set(filters.quality == null ? ["Strong", "Moderate", "Exploratory"] : filters.quality);
   const evidenceThresholds = options.evidenceThresholds;
   const evidenceRanges: Record<Evidence, string> = {
     Strong: `${evidenceThresholds.strong}+ pairs`,
@@ -512,6 +508,26 @@ function updateControls(model: AnywidgetModel, controls: Controls, state = accep
     checkbox.checked = selectedQuality.has(evidence);
     checkbox.setAttribute("aria-label", description);
     if (checkbox.parentElement) checkbox.parentElement.title = description;
+  }
+}
+
+function rebuildRadii(controls: Controls, radii: number[], selected: Set<number>): void {
+  controls.radius.replaceChildren();
+  for (const value of radii) {
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = String(value);
+    checkbox.setAttribute("aria-label", `Radius ${value}`);
+    checkbox.checked = selected.has(value);
+    checkbox.addEventListener("change", () => {
+      const values = [...controls.radius.querySelectorAll<HTMLInputElement>("input:checked")].map((input) => Number(input.value));
+      controls.submitControls({ filters: { radii: values } });
+    }, { signal: controls.signal });
+    const text = document.createElement("span");
+    text.textContent = String(value);
+    label.append(checkbox, text);
+    controls.radius.append(label);
   }
 }
 
