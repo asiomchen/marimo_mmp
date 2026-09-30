@@ -1,7 +1,7 @@
 # marimo_mmp
 
-[![Python ≥3.11](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](tsconfig.json)
+[![Python ≥3.11](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://github.com/asiomchen/marimo_mmp/blob/main/pyproject.toml)
+[![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://github.com/asiomchen/marimo_mmp/blob/main/tsconfig.json)
 [![anywidget](https://img.shields.io/badge/widget-anywidget-7259D6)](https://anywidget.dev/)
 
 `marimo-mmp` visualizes `mmpdb transform` results as an interactive molecular
@@ -69,7 +69,7 @@ raw widget. `graph.update(dataset, property=..., filters=..., max_nodes=...)`
 retains a still-visible selection. Omitted options select the dataset's first
 property, all products, and a limit of 100; direction retains its current value
 unless supplied. Other anywidget hosts display `TransformGraph(dataset)` directly. The
-[explorer notebook](notebooks/transform_explorer.py) includes the full state reference.
+[explorer notebook](https://github.com/asiomchen/marimo_mmp/blob/main/notebooks/transform_explorer.py) includes the full state reference.
 
 Changed-atom highlighting is off by default. Enable it with
 `TransformGraph(dataset, highlight_changes=True)` when the dataset has query SMILES.
@@ -143,7 +143,7 @@ The explorer and tests use `data/processed/bilastine_transforms.tsv` and
 human histamine H1 receptor (HRH1, UniProt `P35367`,
 [ChEMBL target `CHEMBL231`](https://www.ebi.ac.uk/chembl/explore/target/CHEMBL231)),
 retrieved on August 26, 2026. Cite ChEMBL 37 when reusing this derived data.
-[build_report.json](data/processed/build_report.json) records the release,
+[build_report.json](https://github.com/asiomchen/marimo_mmp/blob/main/data/processed/build_report.json) records the release,
 retrieval timestamp, and validation counts.
 
 The database uses exact, positive IC50 measurements in nM from direct human H1
@@ -165,8 +165,8 @@ uv run marimo edit notebooks/transform_explorer.py
 ```
 
 Sources: Python in `src/marimo_mmp/`, TypeScript/CSS in `frontend/`, examples in
-`notebooks/`, tools in `scripts/`. See [WIDGET_ARCHITECTURE.md](WIDGET_ARCHITECTURE.md)
-for internals and [AGENTS.md](AGENTS.md) for conventions.
+`notebooks/`, tools in `scripts/`. See [WIDGET_ARCHITECTURE.md](https://github.com/asiomchen/marimo_mmp/blob/main/WIDGET_ARCHITECTURE.md)
+for internals and [AGENTS.md](https://github.com/asiomchen/marimo_mmp/blob/main/AGENTS.md) for conventions.
 
 Run the CI checks and package verification:
 
@@ -189,7 +189,7 @@ version. Ruff also runs via pre-commit.
 
 ## License
 
-Code and documentation are licensed under the [MIT License](LICENSE).
+Code and documentation are licensed under the [MIT License](https://github.com/asiomchen/marimo_mmp/blob/main/LICENSE).
 The ChEMBL-derived example data is distributed under
 [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/); see
 [Example data](#example-data) for provenance and attribution.

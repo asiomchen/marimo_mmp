@@ -747,6 +747,7 @@ dependencies = [
     { name = "anywidget" },
     { name = "pandas" },
     { name = "rdkit" },
+    { name = "traitlets" },
 ]
 
 [package.optional-dependencies]
@@ -770,6 +771,7 @@ requires-dist = [
     { name = "marimo", marker = "extra == 'notebook'", specifier = ">=0.24.0" },
     { name = "pandas", specifier = ">=2.2.2" },
     { name = "rdkit", specifier = ">=2024.9.1" },
+    { name = "traitlets", specifier = ">=5" },
 ]
 provides-extras = ["notebook"]
 

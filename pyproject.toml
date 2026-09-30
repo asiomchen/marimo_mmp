@@ -9,11 +9,42 @@ authors = [
     { name = "Anton Siomchen", email = "41703271+asiomchen@users.noreply.github.com" }
 ]
 requires-python = ">=3.11"
+keywords = [
+    "anywidget",
+    "cheminformatics",
+    "marimo",
+    "matched molecular pairs",
+    "medicinal chemistry",
+    "mmpdb",
+    "rdkit",
+    "visualization",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Typing :: Typed",
+]
 dependencies = [
     "anywidget>=0.9",
     "pandas>=2.2.2",
     "rdkit>=2024.9.1",
+    "traitlets>=5",
 ]
+
+[project.urls]
+Homepage = "https://github.com/asiomchen/marimo_mmp"
+Repository = "https://github.com/asiomchen/marimo_mmp"
+Issues = "https://github.com/asiomchen/marimo_mmp/issues"
+Documentation = "https://github.com/asiomchen/marimo_mmp/blob/main/README.md"
 
 [project.optional-dependencies]
 notebook = [
