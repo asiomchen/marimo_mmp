@@ -155,6 +155,61 @@ class TransformFilters:
     max_std: float | None = None
     max_p_value: float | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.direction, str):
+            raise TypeError("direction filter must be a string")
+        direction = self.direction.lower()
+        if direction not in {"all", "gain", "loss", "neutral"}:
+            raise ValueError("direction must be all, gain, loss, or neutral")
+        object.__setattr__(self, "direction", direction)
+        object.__setattr__(
+            self,
+            "min_abs_effect",
+            _filter_number(self.min_abs_effect, "min_abs_effect"),
+        )
+        if isinstance(self.min_support, bool) or not isinstance(self.min_support, int):
+            raise TypeError("min_support must be an integer")
+        if self.min_support < 1:
+            raise ValueError("min_support must be at least 1")
+        if self.radii is not None:
+            radii = (self.radii,) if isinstance(self.radii, int) else self.radii
+            if isinstance(radii, (str, bytes)) or not isinstance(radii, Iterable):
+                raise TypeError(
+                    "radii must be an integer, a sequence of integers, or None"
+                )
+            radii = tuple(radii)
+            if any(
+                isinstance(r, bool) or not isinstance(r, int) or r < 0 for r in radii
+            ):
+                raise ValueError("radii must be non-negative integers")
+            object.__setattr__(self, "radii", radii)
+        if self.quality is not None:
+            quality = (self.quality,) if isinstance(self.quality, str) else self.quality
+            if not isinstance(quality, Iterable):
+                raise TypeError(
+                    "quality must be a string, a sequence of strings, or None"
+                )
+            tiers: dict[str, str] = {
+                tier.value.lower(): tier.value for tier in EvidenceTier
+            }
+            normalized = []
+            for item in quality:
+                if not isinstance(item, str) or item.lower() not in tiers:
+                    raise ValueError(
+                        f"quality must contain only {', '.join(tiers.values())}"
+                    )
+                normalized.append(tiers[item.lower()])
+            object.__setattr__(self, "quality", tuple(normalized))
+        if not isinstance(self.text, str):
+            raise TypeError("text filter must be a string")
+        if self.max_std is not None:
+            object.__setattr__(self, "max_std", _filter_number(self.max_std, "max_std"))
+        if self.max_p_value is not None:
+            max_p_value = _filter_number(self.max_p_value, "max_p_value")
+            if max_p_value > 1:
+                raise ValueError("max_p_value must be at most 1")
+            object.__setattr__(self, "max_p_value", max_p_value)
+
     @classmethod
     def coerce(
         cls, value: TransformFilters | Mapping[str, Any] | None
@@ -169,11 +224,15 @@ class TransformFilters:
         unknown = sorted(set(value) - allowed)
         if unknown:
             raise ValueError(f"unknown filters: {', '.join(unknown)}")
-        converted = dict(value)
-        for name in ("radii", "quality"):
-            if name in converted and converted[name] is not None:
-                converted[name] = tuple(converted[name])
-        return cls(**converted)
+        return cls(**value)
+
+
+def _filter_number(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a number")
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+    return float(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,12 +562,12 @@ class TransformDataset:
             raise KeyError(
                 f"unknown property {property!r}; choose from {', '.join(self.properties)}"
             )
+        if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
+            raise TypeError("max_nodes must be an integer")
         if max_nodes < 1:
             raise ValueError("max_nodes must be at least 1")
         selected_filters = TransformFilters.coerce(filters)
-        direction_filter = selected_filters.direction.lower()
-        if direction_filter not in {"all", "gain", "loss", "neutral"}:
-            raise ValueError("direction must be all, gain, loss, or neutral")
+        direction_filter = selected_filters.direction
         orientation = direction.lower() if isinstance(direction, str) else ""
         if orientation not in {"higher", "lower"}:
             raise ValueError("direction must be higher or lower")

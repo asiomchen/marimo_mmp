@@ -18,6 +18,7 @@ from marimo_mmp import (
     EvidenceTier,
     PropertyStats,
     TransformDataset,
+    TransformFilters,
     TransformRecord,
     TransformValidationError,
 )
@@ -405,6 +406,53 @@ def test_view_direction_validates_orientation_and_filter():
         ValueError, match="direction must be all, gain, loss, or neutral"
     ):
         dataset.view(filters={"direction": "up"})
+
+
+def test_filters_normalize_scalar_and_case_insensitive_values():
+    filters = TransformFilters.coerce(
+        {"direction": "Gain", "quality": "strong", "radii": 1, "min_abs_effect": 1}
+    )
+    assert filters == TransformFilters(
+        direction="gain", quality=("Strong",), radii=(1,), min_abs_effect=1.0
+    )
+    assert TransformFilters.coerce(
+        {"quality": ["moderate", "Strong"], "radii": [2, 1]}
+    ) == TransformFilters(quality=("Moderate", "Strong"), radii=(2, 1))
+    assert TransformFilters.coerce({"quality": [], "radii": []}).quality == ()
+
+
+@pytest.mark.parametrize(
+    ("filters", "error"),
+    [
+        ({"direction": 1}, TypeError),
+        ({"text": None}, TypeError),
+        ({"min_support": 0}, ValueError),
+        ({"min_support": 2.5}, TypeError),
+        ({"min_support": True}, TypeError),
+        ({"min_abs_effect": -0.1}, ValueError),
+        ({"min_abs_effect": float("nan")}, ValueError),
+        ({"min_abs_effect": "1"}, TypeError),
+        ({"radii": "1"}, TypeError),
+        ({"radii": [1, -1]}, ValueError),
+        ({"radii": [True]}, ValueError),
+        ({"quality": ["Great"]}, ValueError),
+        ({"quality": [1]}, ValueError),
+        ({"max_std": -1}, ValueError),
+        ({"max_p_value": 1.5}, ValueError),
+    ],
+)
+def test_invalid_filters_are_rejected(filters, error):
+    with pytest.raises(error):
+        TransformFilters.coerce(filters)
+
+
+@pytest.mark.parametrize(
+    ("max_nodes", "error"), [(2.5, TypeError), (True, TypeError), (0, ValueError)]
+)
+def test_view_rejects_invalid_max_nodes(max_nodes, error):
+    dataset = TransformDataset.from_tsv(first_row_text().encode())
+    with pytest.raises(error, match="max_nodes"):
+        dataset.view(max_nodes=max_nodes)
 
 
 def test_mmpdb_provenance_is_eager_directional_and_read_only(tmp_path):
