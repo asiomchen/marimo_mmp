@@ -62,7 +62,7 @@ test("a browser gesture sends one complete atomic request and saves once", async
     revision: 1,
     property_name: "pIC50",
     direction: "higher",
-    filters: { direction: "gain", min_abs_effect: 0, min_support: 1, radii: null, quality: null, text: "" },
+    filters: { effect: "gain", min_abs_effect: 0, min_support: 1, radii: null, quality: null, text: "" },
     max_nodes: 100,
   });
   assert.equal(view.el.querySelector(".mmp-toolbar").getAttribute("aria-busy"), "true");
@@ -79,7 +79,7 @@ test("the optimum control submits the property direction", async () => {
 
   assert.equal(view.model.get("_control_request").revision, 1);
   assert.equal(view.model.get("_control_request").direction, "lower");
-  assert.equal(view.model.get("_control_request").filters.direction, "all");
+  assert.equal(view.model.get("_control_request").filters.effect, "all");
   view.cleanup();
 });
 
@@ -216,12 +216,12 @@ test("rapid gestures compose drafts and only the latest response clears busy sta
 
   assert.equal(view.model.saved.length, 2);
   assert.equal(view.model.get("_control_request").revision, 2);
-  assert.equal(view.model.get("_control_request").filters.direction, "loss");
+  assert.equal(view.model.get("_control_request").filters.effect, "loss");
   assert.equal(view.model.get("_control_request").filters.min_support, 4);
 
   view.model.set("_control_response", { revision: 1, ok: true, error: null });
   assert.equal(view.el.querySelector(".mmp-toolbar").getAttribute("aria-busy"), "true");
-  view.model.set("filters", { ...view.model.get("filters"), direction: "loss", min_support: 4 });
+  view.model.set("filters", { ...view.model.get("filters"), effect: "loss", min_support: 4 });
   view.model.set("_control_response", { revision: 2, ok: true, error: null });
   assert.equal(view.el.querySelector(".mmp-toolbar").getAttribute("aria-busy"), "false");
   assert.match(view.el.querySelector(".mmp-update-status").textContent, /updated/i);

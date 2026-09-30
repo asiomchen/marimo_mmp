@@ -63,7 +63,7 @@ export function modelState(overrides = {}) {
     selected_id: null,
     property_name: "pIC50",
     direction: "higher",
-    filters: { direction: "all", min_abs_effect: 0, min_support: 1, radii: null, quality: null, text: "" },
+    filters: { effect: "all", min_abs_effect: 0, min_support: 1, radii: null, quality: null, text: "" },
     max_nodes: 100,
     height: 600,
     _control_request: {},

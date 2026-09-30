@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, TextIO
 
 import pandas as pd
-from rdkit import Chem
+from rdkit import Chem, rdBase
 
 
 class TransformValidationError(ValueError):
@@ -151,7 +151,7 @@ class TransformRecord:
 
 @dataclass(frozen=True, slots=True)
 class TransformFilters:
-    direction: str = "all"
+    effect: str = "all"
     min_abs_effect: float = 0.0
     min_support: int = 1
     radii: tuple[int, ...] | None = None
@@ -161,12 +161,12 @@ class TransformFilters:
     max_p_value: float | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.direction, str):
-            raise TypeError("direction filter must be a string")
-        direction = self.direction.lower()
-        if direction not in {"all", "gain", "loss", "neutral"}:
-            raise ValueError("direction must be all, gain, loss, or neutral")
-        object.__setattr__(self, "direction", direction)
+        if not isinstance(self.effect, str):
+            raise TypeError("effect filter must be a string")
+        effect = self.effect.lower()
+        if effect not in {"all", "gain", "loss", "neutral"}:
+            raise ValueError("effect must be all, gain, loss, or neutral")
+        object.__setattr__(self, "effect", effect)
         object.__setattr__(
             self,
             "min_abs_effect",
@@ -252,18 +252,25 @@ class SourcePair:
     constant_smiles: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class TransformView:
-    dataset: TransformDataset
-    property: str
+    dataset: TransformDataset = field(repr=False)
+    property_name: str
     records: tuple[TransformRecord, ...]
-    total_matching: int
+    matching_count: int
     max_nodes: int
     filters: TransformFilters
 
+    def __repr__(self) -> str:
+        return (
+            f"TransformView(property_name={self.property_name!r}, "
+            f"records={len(self.records)}/{self.matching_count}, "
+            f"max_nodes={self.max_nodes}, filters={self.filters!r})"
+        )
+
     @property
     def truncated(self) -> bool:
-        return self.total_matching > len(self.records)
+        return self.matching_count > len(self.records)
 
     def record(self, record_id: str) -> TransformRecord | None:
         return next(
@@ -283,18 +290,18 @@ class TransformView:
         if record is None:
             raise KeyError(f"transform ID {record_id!r} is not in this view")
         return self.dataset.source_pairs(
-            record.id, self.property, include_missing=include_missing
+            record.id, self.property_name, include_missing=include_missing
         )
 
     def rows(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for record in self.records:
-            stats = record.properties[self.property]
+            stats = record.properties[self.property_name]
             result.append(
                 {
                     "ID": record.id,
                     "SMILES": record.smiles,
-                    "property": self.property,
+                    "property": self.property_name,
                     "median": stats.median,
                     "count": stats.count,
                     "evidence": stats.evidence.value,
@@ -314,7 +321,7 @@ class TransformView:
         return result
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class TransformDataset:
     """Transform results with optional in-memory source-pair provenance.
 
@@ -333,6 +340,19 @@ class TransformDataset:
     _source_pairs: dict[tuple[str, str], tuple[SourcePair, ...]] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
+
+    def __repr__(self) -> str:
+        return (
+            f"TransformDataset(records={len(self.records)}, "
+            f"properties={self.properties!r}, "
+            f"mmpdb_path={None if self.mmpdb_path is None else str(self.mmpdb_path)!r}, "
+            f"warnings={len(self.warnings)})"
+        )
+
+    @property
+    def has_mmpdb(self) -> bool:
+        """Whether source-pair provenance was loaded from an MMPDB."""
+        return self.mmpdb_path is not None
 
     def __post_init__(self) -> None:
         records = tuple(self.records)
@@ -386,7 +406,7 @@ class TransformDataset:
         frame: pd.DataFrame,
         *,
         original_smiles: str | None = None,
-        mmpdb: str | PathLike[str] | None = None,
+        mmpdb_path: str | PathLike[str] | None = None,
         evidence_thresholds: EvidenceThresholds | Mapping[str, Any] | None = None,
     ) -> TransformDataset:
         """Load validated transform results from a pandas DataFrame.
@@ -403,7 +423,7 @@ class TransformDataset:
         original_smiles : str, optional
             Query-compound SMILES used for graph context and depiction. When
             supplied, it must describe a valid RDKit molecule.
-        mmpdb : str or PathLike, optional
+        mmpdb_path : str or PathLike, optional
             MMPDB SQLite database used to load source-pair provenance. The
             database is opened read-only and checked against every property
             and rule environment in the transform table. Relevant source
@@ -484,7 +504,7 @@ class TransformDataset:
                 )
             identifiers.add(identifier)
             smiles = cell(cells, "SMILES")
-            if not smiles or Chem.MolFromSmiles(smiles) is None:
+            if not smiles or _mol_from_smiles(smiles) is None:
                 raise TransformValidationError(
                     f"row {row_number}: invalid product SMILES"
                 )
@@ -560,7 +580,7 @@ class TransformDataset:
             raise TransformValidationError(f"{name}: no transform rows found")
         if original_smiles is not None:
             original_smiles = original_smiles.strip()
-            if not original_smiles or Chem.MolFromSmiles(original_smiles) is None:
+            if not original_smiles or _mol_from_smiles(original_smiles) is None:
                 raise TransformValidationError(
                     "original_smiles is not a valid SMILES structure"
                 )
@@ -568,7 +588,7 @@ class TransformDataset:
             records=tuple(records),
             properties=tuple(property_columns),
             original_smiles=original_smiles,
-            mmpdb_path=Path(mmpdb) if mmpdb is not None else None,
+            mmpdb_path=Path(mmpdb_path) if mmpdb_path is not None else None,
             warnings=tuple(sorted(warning_set)),
             evidence_thresholds=selected_evidence_thresholds,
         )
@@ -579,7 +599,7 @@ class TransformDataset:
         transform_file: str | PathLike[str] | bytes | bytearray | BinaryIO | TextIO,
         *,
         original_smiles: str | None = None,
-        mmpdb: str | PathLike[str] | None = None,
+        mmpdb_path: str | PathLike[str] | None = None,
         evidence_thresholds: EvidenceThresholds | Mapping[str, Any] | None = None,
     ) -> TransformDataset:
         """Load validated transform results from TSV or CSV input.
@@ -595,28 +615,28 @@ class TransformDataset:
         return cls.from_df(
             _frame_from_text(text, name),
             original_smiles=original_smiles,
-            mmpdb=mmpdb,
+            mmpdb_path=mmpdb_path,
             evidence_thresholds=evidence_thresholds,
         )
 
     def view(
         self,
-        property: str | None = None,
+        property_name: str | None = None,
         filters: TransformFilters | Mapping[str, Any] | None = None,
         max_nodes: int = 100,
         direction: str = "higher",
     ) -> TransformView:
-        property = property or self.properties[0]
-        if property not in self.properties:
+        property_name = property_name or self.properties[0]
+        if property_name not in self.properties:
             raise KeyError(
-                f"unknown property {property!r}; choose from {', '.join(self.properties)}"
+                f"unknown property {property_name!r}; choose from {', '.join(self.properties)}"
             )
         if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
             raise TypeError("max_nodes must be an integer")
         if max_nodes < 1:
             raise ValueError("max_nodes must be at least 1")
         selected_filters = TransformFilters.coerce(filters)
-        direction_filter = selected_filters.direction
+        effect_filter = selected_filters.effect
         orientation = direction.lower() if isinstance(direction, str) else ""
         if orientation not in {"higher", "lower"}:
             raise ValueError("direction must be higher or lower")
@@ -630,18 +650,18 @@ class TransformDataset:
             return median > 0 if orientation == "higher" else median < 0
 
         def include(record: TransformRecord) -> bool:
-            stats = record.properties.get(property)
+            stats = record.properties.get(property_name)
             if stats is None or stats.count < selected_filters.min_support:
                 return False
             if abs(stats.median) < selected_filters.min_abs_effect:
                 return False
-            if direction_filter == "gain" and not favorable(stats.median):
+            if effect_filter == "gain" and not favorable(stats.median):
                 return False
-            if direction_filter == "loss" and (
+            if effect_filter == "loss" and (
                 stats.median == 0 or favorable(stats.median)
             ):
                 return False
-            if direction_filter == "neutral" and stats.median != 0:
+            if effect_filter == "neutral" and stats.median != 0:
                 return False
             if radii_are_filtered and stats.radius not in radii:
                 return False
@@ -681,16 +701,16 @@ class TransformDataset:
         matches = [record for record in self.records if include(record)]
         matches.sort(
             key=lambda record: (
-                tier_rank[record.properties[property].evidence],
-                -record.properties[property].count,
-                -record.properties[property].radius,
-                -abs(record.properties[property].median),
+                tier_rank[record.properties[property_name].evidence],
+                -record.properties[property_name].count,
+                -record.properties[property_name].radius,
+                -abs(record.properties[property_name].median),
                 stable_id(record.id),
             )
         )
         return TransformView(
             self,
-            property,
+            property_name,
             tuple(matches[:max_nodes]),
             len(matches),
             max_nodes,
@@ -845,10 +865,16 @@ def _validate_columns(fields: Iterable[str], name: str) -> None:
         )
 
 
+def _mol_from_smiles(smiles: str) -> Chem.Mol | None:
+    # Rule SMILES contain dummy atoms; RDKit logs noisy hydrogen warnings.
+    with rdBase.BlockLogs():
+        return Chem.MolFromSmiles(smiles)
+
+
 def _valid_rule_smiles(smiles: str) -> bool:
     if not smiles:
         return False
-    molecule = Chem.MolFromSmiles(smiles)
+    molecule = _mol_from_smiles(smiles)
     return molecule is not None and molecule.GetNumAtoms() > 0
 
 

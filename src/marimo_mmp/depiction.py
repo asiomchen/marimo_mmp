@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from xml.etree import ElementTree
 
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem import Draw, rdDepictor, rdFMCS
 
 
@@ -52,6 +52,16 @@ def molecule_svg(
     reference_smiles: str | None = None,
     width: int = 220,
     height: int = 150,
+) -> str:
+    with rdBase.BlockLogs():
+        return _molecule_svg(smiles, reference_smiles, width, height)
+
+
+def _molecule_svg(
+    smiles: str,
+    reference_smiles: str | None,
+    width: int,
+    height: int,
 ) -> str:
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None:

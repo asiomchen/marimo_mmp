@@ -38,14 +38,14 @@ from marimo_mmp import (
 dataset = TransformDataset.from_tsv(
     "transforms.tsv",
     original_smiles="CCO",  # optional query SMILES
-    mmpdb="assay.mmpdb",  # optional provenance database
+    mmpdb_path="assay.mmpdb",  # optional provenance database
     evidence_thresholds=EvidenceThresholds(moderate=2, strong=5),
 )
 graph = mo.ui.anywidget(
     TransformGraph(
         dataset,
-        property="pIC50",
-        filters=TransformFilters(direction="gain", min_support=2),
+        property_name="pIC50",
+        filters=TransformFilters(effect="gain", min_support=2),
         max_nodes=100,
     )
 )
@@ -65,7 +65,7 @@ state.source_pairs()                         # in-memory pairs for selected prod
 ```
 
 `graph.value` is marimo's synchronized trait dictionary; `graph.widget` is the
-raw widget. `graph.update(dataset, property=..., filters=..., max_nodes=...)`
+raw widget. `graph.update(dataset, property_name=..., filters=..., max_nodes=...)`
 retains a still-visible selection. Omitted options select the dataset's first
 property, all products, and a limit of 100; direction retains its current value
 unless supplied. Other anywidget hosts display `TransformGraph(dataset)` directly. The
@@ -96,7 +96,7 @@ query SMILES as `original_smiles` when loading the output in the quickstart.
 | Output | Use in the widget |
 |---|---|
 | `transforms.tsv` from `mmpdb transform` | Required input: generated product SMILES, transformation rules, environments, and property-change statistics. |
-| `assay.mmpdb` from `mmpdb index` | Optional SQLite input via `mmpdb=...`: source compound pairs and their measured property values for provenance. Use the same database that generated the TSV. |
+| `assay.mmpdb` from `mmpdb index` | Optional SQLite input via `mmpdb_path=...`: source compound pairs and their measured property values for provenance. Use the same database that generated the TSV. |
 | `compounds.fragdb` from `mmpdb fragment` | Intermediate used by indexing; the widget does not read it. |
 
 Keep property statistics in the transform output; `--no-properties`,
@@ -119,9 +119,9 @@ metadata. Larger provenance sets increase loading time and memory use.
 
 | Parameter | Meaning |
 |---|---|
-| `TransformGraph(dataset, property=..., max_nodes=100)` | Property from `dataset.properties` (default: first); product limit after filtering and ranking. |
+| `TransformGraph(dataset, property_name=..., max_nodes=100)` | Property from `dataset.properties` (default: first); product limit after filtering and ranking. |
 | `TransformGraph(..., direction="higher")` | Favorable orientation: `higher` or `lower`; controls gain/loss filtering and colors. |
-| `TransformFilters(direction=...)` | `all` (default), `gain`, `loss`, or `neutral`, following the orientation. |
+| `TransformFilters(effect=...)` | `all` (default), `gain`, `loss`, or `neutral`, following the orientation. |
 | Other filter fields | `min_abs_effect`, `min_support`, `radii`, `quality`, `text`, `max_std`, `max_p_value`. Use tuples for radii and evidence names in `quality`. |
 | `EvidenceThresholds(moderate=2, strong=5)` | Inclusive pair-count minima: Moderate ≥2; Strong > Moderate. |
 | `TransformGraph(..., height=1220)` | Stage height cap in pixels (minimum 480), also limited by the viewport. |

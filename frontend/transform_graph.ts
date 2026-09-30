@@ -7,7 +7,7 @@ type TimerId = ReturnType<typeof globalThis.setTimeout>;
 type FrameId = ReturnType<typeof globalThis.requestAnimationFrame>;
 
 interface TransformFilters {
-  direction: Direction;
+  effect: Direction;
   min_abs_effect: number;
   min_support: number;
   radii: number[] | null;
@@ -368,7 +368,7 @@ function buildControls(
     option.textContent = label;
     direction.append(option);
   }
-  direction.addEventListener("change", () => submitControls({ filters: { direction: direction.value as Direction } }), { signal });
+  direction.addEventListener("change", () => submitControls({ filters: { effect: direction.value as Direction } }), { signal });
 
   const effect = document.createElement("input");
   effect.type = "range";
@@ -474,7 +474,7 @@ function updateControls(model: AnywidgetModel, controls: Controls, state = accep
   }
   controls.property.value = currentProperty;
   controls.optimum.value = state.direction || "higher";
-  controls.direction.value = filters.direction || "all";
+  controls.direction.value = filters.effect || "all";
   controls.effect.max = String(Math.max(options.maxEffect || 1, 0.05));
   controls.effect.value = String(filters.min_abs_effect || 0);
   controls.effectOutput.value = Number(controls.effect.value).toFixed(2);

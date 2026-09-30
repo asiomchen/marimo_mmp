@@ -55,7 +55,7 @@ An optional MMPDB adds experimental provenance. During loading, the dataset:
 4. Shares pair tuples when records use the same oriented rule environment and property
 5. Closes the SQLite connection before returning
 
-The dataset stores those pairs in memory. `source_pairs()` performs no later database reads, so an uploaded temporary database can be deleted immediately after loading. `dataset.mmpdb_path` retains the original path as provenance metadata; it does not guarantee that a file still exists there. The graph’s `hasMmpdb` flag and `state.has_mmpdb()` indicate that an MMPDB was loaded; a particular selection can still have no source pairs.
+The dataset stores those pairs in memory. `source_pairs()` performs no later database reads, so an uploaded temporary database can be deleted immediately after loading. `dataset.mmpdb_path` retains the original path as provenance metadata; it does not guarantee that a file still exists there. The graph’s `hasMmpdb` flag and `state.has_mmpdb` indicate that an MMPDB was loaded; a particular selection can still have no source pairs.
 
 By default, `source_pairs()` omits pairs missing either compound’s selected-property value. `include_missing=True` returns all stored structural pairs. The dataset, `TransformView`, and `TransformGraphState` expose this behavior at their respective record or selection boundaries.
 
@@ -63,7 +63,7 @@ The explorer writes uploaded bytes into a temporary `.mmpdb` file inside an `Exi
 
 ## Python model and public state
 
-`TransformGraph` accepts a `TransformDataset` with optional `property`, `filters`, `max_nodes`, and `direction` arguments. It prepares a `TransformView` internally, builds a browser-safe payload, and initializes ten synchronized traits. The same direction controls both initial filtering and gain/loss coloring. `update(dataset, ...)` validates new options before replacing the current dataset, retains a still-visible selection, and preserves direction unless explicitly supplied. Omitted property, filters, and product limit use the constructor defaults. `dataset.view(...)` remains available for data-only queries.
+`TransformGraph` accepts a `TransformDataset` with optional `property_name`, `filters`, `max_nodes`, and `direction` arguments. It prepares a `TransformView` internally, builds a browser-safe payload, and initializes ten synchronized traits. The same direction controls both initial filtering and gain/loss coloring. `update(dataset, ...)` validates new options before replacing the current dataset, retains a still-visible selection, and preserves direction unless explicitly supplied. Omitted property, filters, and product limit use the constructor defaults. `dataset.view(...)` remains available for data-only queries.
 
 ### Payload and graph levels
 
@@ -111,7 +111,7 @@ Direct Python assignments can trigger separate refreshes. Browser gestures use t
 
 ### Typed state and copying
 
-`graph.state` returns an immutable `TransformGraphState` snapshot derived from synchronized traits. It resolves payload product IDs to typed records and exposes selection, property statistics, filters, counts, warnings, rows, and in-memory source pairs. `shown_compounds` follows payload order; radial positions are a separate browser calculation.
+`graph.state` returns an immutable `TransformGraphState` snapshot derived from synchronized traits. It resolves payload product IDs to typed records and exposes selection, property statistics, filters, counts, warnings, rows, and in-memory source pairs. `records` follows payload order; radial positions are a separate browser calculation.
 
 Record property mappings copy their constructor input and expose it read-only. Deep copies rebuild these mappings so dataset and widget copies preserve immutability.
 

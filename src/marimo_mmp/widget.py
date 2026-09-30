@@ -27,7 +27,7 @@ from .depiction import molecule_svg
 DEFAULT_GRAPH_HEIGHT = 1220
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class TransformGraphState:
     """Immutable Python snapshot of the graph's current interactive state."""
 
@@ -39,11 +39,20 @@ class TransformGraphState:
     max_nodes: int
     height: int
     selected_id: str | None
-    shown_compounds: tuple[TransformRecord, ...]
+    records: tuple[TransformRecord, ...]
     matching_count: int
     query_smiles: str | None
     warnings: tuple[str, ...]
     _dataset: TransformDataset = field(init=False, repr=False, compare=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"TransformGraphState(property_name={self.property_name!r}, "
+            f"direction={self.direction!r}, "
+            f"records={self.shown_count}/{self.matching_count}, "
+            f"max_nodes={self.max_nodes}, selected_id={self.selected_id!r}, "
+            f"filters={self.filters!r})"
+        )
 
     @classmethod
     def _create(cls, dataset: TransformDataset, **fields: Any) -> TransformGraphState:
@@ -53,7 +62,7 @@ class TransformGraphState:
 
     @property
     def shown_count(self) -> int:
-        return len(self.shown_compounds)
+        return len(self.records)
 
     @property
     def truncated(self) -> bool:
@@ -72,21 +81,20 @@ class TransformGraphState:
 
     def record(self, record_id: str) -> TransformRecord | None:
         target = str(record_id)
-        return next(
-            (record for record in self.shown_compounds if record.id == target), None
-        )
+        return next((record for record in self.records if record.id == target), None)
 
+    @property
     def has_mmpdb(self) -> bool:
-        """Return whether source-pair provenance was loaded from an MMPDB."""
-        return self._dataset.mmpdb_path is not None
+        """Whether source-pair provenance was loaded from an MMPDB."""
+        return self._dataset.has_mmpdb
 
     def rows(self) -> list[dict[str, Any]]:
         """Return table-ready rows for the shown compounds."""
         return TransformView(
             dataset=self._dataset,
-            property=self.property_name,
-            records=self.shown_compounds,
-            total_matching=self.matching_count,
+            property_name=self.property_name,
+            records=self.records,
+            matching_count=self.matching_count,
             max_nodes=self.max_nodes,
             filters=self.filters,
         ).rows()
@@ -105,7 +113,7 @@ class TransformGraphState:
             return ()
         if self.record(target) is None:
             raise KeyError(f"transform ID {target!r} is not among the shown compounds")
-        if not self.has_mmpdb():
+        if not self.has_mmpdb:
             return ()
         return self._dataset.source_pairs(
             target, self.property_name, include_missing=include_missing
@@ -132,7 +140,7 @@ def _payload(
     from_groups: dict[str, dict[str, Any]] = {}
     groups: dict[str, dict[str, Any]] = {}
     for record in view.records:
-        stats = record.properties[view.property]
+        stats = record.properties[view.property_name]
         from_group_id = f"from:{stats.from_smiles}"
         group_id = (
             f"rule:{stats.rule_environment_id}:{stats.from_smiles}>{stats.to_smiles}"
@@ -236,24 +244,24 @@ def _payload(
         "controlOptions": {
             "radii": sorted(
                 {
-                    record.properties[view.property].radius
+                    record.properties[view.property_name].radius
                     for record in view.dataset.records
-                    if view.property in record.properties
+                    if view.property_name in record.properties
                 }
             ),
             "maxSupport": max(
                 (
-                    record.properties[view.property].count
+                    record.properties[view.property_name].count
                     for record in view.dataset.records
-                    if view.property in record.properties
+                    if view.property_name in record.properties
                 ),
                 default=1,
             ),
             "maxEffect": max(
                 (
-                    abs(record.properties[view.property].median)
+                    abs(record.properties[view.property_name].median)
                     for record in view.dataset.records
-                    if view.property in record.properties
+                    if view.property_name in record.properties
                 ),
                 default=1.0,
             ),
@@ -268,10 +276,10 @@ def _payload(
         "fromGroups": list(from_groups.values()),
         "groups": list(groups.values()),
         "shown": len(products),
-        "matching": view.total_matching,
+        "matching": view.matching_count,
         "truncated": view.truncated,
         "warnings": list(view.dataset.warnings),
-        "hasMmpdb": view.dataset.mmpdb_path is not None,
+        "hasMmpdb": view.dataset.has_mmpdb,
     }, depictions
 
 
@@ -286,7 +294,7 @@ class TransformGraph(anywidget.AnyWidget):
     ----------
     dataset : TransformDataset
         Loaded transform records and optional source-pair provenance.
-    property : str or None, default=None
+    property_name : str or None, default=None
         Property to display. Defaults to the dataset's first property.
     filters : TransformFilters or mapping or None, default=None
         Initial product filters. Defaults to all products.
@@ -336,7 +344,7 @@ class TransformGraph(anywidget.AnyWidget):
         self,
         dataset: TransformDataset,
         *,
-        property: str | None = None,
+        property_name: str | None = None,
         filters: TransformFilters | Mapping[str, Any] | None = None,
         max_nodes: int = 100,
         height: int = DEFAULT_GRAPH_HEIGHT,
@@ -351,7 +359,10 @@ class TransformGraph(anywidget.AnyWidget):
         if direction not in ("higher", "lower"):
             raise ValueError("direction must be higher or lower")
         view = dataset.view(
-            property=property, filters=filters, max_nodes=max_nodes, direction=direction
+            property_name=property_name,
+            filters=filters,
+            max_nodes=max_nodes,
+            direction=direction,
         )
         self._highlight_changes = highlight_changes
         self._dataset = dataset
@@ -365,7 +376,7 @@ class TransformGraph(anywidget.AnyWidget):
             data=data,
             depictions=depictions,
             selected_id=initial,
-            property_name=view.property,
+            property_name=view.property_name,
             direction=direction,
             filters=asdict(view.filters),
             max_nodes=view.max_nodes,
@@ -398,13 +409,13 @@ class TransformGraph(anywidget.AnyWidget):
         if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
             raise TypeError("max_nodes must be an integer")
         view = self._dataset.view(
-            property=controls["property_name"],
+            property_name=controls["property_name"],
             filters=controls["filters"],
             max_nodes=max_nodes,
             direction=self.direction,
         )
         normalized = {
-            "property_name": view.property,
+            "property_name": view.property_name,
             "filters": asdict(view.filters),
             "max_nodes": view.max_nodes,
         }
@@ -462,7 +473,7 @@ class TransformGraph(anywidget.AnyWidget):
             if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
                 raise TypeError("max_nodes must be an integer")
             view = self._dataset.view(
-                property=property_name,
+                property_name=property_name,
                 filters=filters,
                 max_nodes=max_nodes,
                 direction=direction,
@@ -478,7 +489,7 @@ class TransformGraph(anywidget.AnyWidget):
         self._suspend_refresh = True
         try:
             with self.hold_sync():
-                self.property_name = view.property
+                self.property_name = view.property_name
                 self.direction = direction
                 self.filters = asdict(view.filters)
                 self.max_nodes = view.max_nodes
@@ -498,7 +509,7 @@ class TransformGraph(anywidget.AnyWidget):
     ) -> None:
         if view is None:
             view = self._dataset.view(
-                property=self.property_name,
+                property_name=self.property_name,
                 filters=self.filters,
                 max_nodes=self.max_nodes,
                 direction=self.direction,
@@ -531,9 +542,7 @@ class TransformGraph(anywidget.AnyWidget):
         records_by_id = {record.id: record for record in self._dataset.records}
         product_ids = [str(product["id"]) for product in self.data.get("products", ())]
         try:
-            shown_compounds = tuple(
-                records_by_id[record_id] for record_id in product_ids
-            )
+            records = tuple(records_by_id[record_id] for record_id in product_ids)
         except KeyError as exc:
             raise RuntimeError(
                 f"graph payload references unknown transform ID {exc.args[0]!r}"
@@ -551,8 +560,8 @@ class TransformGraph(anywidget.AnyWidget):
             max_nodes=self.max_nodes,
             height=self.height,
             selected_id=selected_id,
-            shown_compounds=shown_compounds,
-            matching_count=int(self.data.get("matching", len(shown_compounds))),
+            records=records,
+            matching_count=int(self.data.get("matching", len(records))),
             query_smiles=self.data.get("querySmiles"),
             warnings=tuple(self.data.get("warnings", ())),
         )
@@ -561,14 +570,14 @@ class TransformGraph(anywidget.AnyWidget):
         self,
         dataset: TransformDataset,
         *,
-        property: str | None = None,
+        property_name: str | None = None,
         filters: TransformFilters | Mapping[str, Any] | None = None,
         max_nodes: int = 100,
         direction: str | None = None,
     ) -> None:
         """Replace graph data and filters, retaining a still-visible selection.
 
-        Property, filters, and product limit use the constructor defaults when
+        Property name, filters, and product limit use the constructor defaults when
         omitted. Direction retains its current value unless supplied. Height
         and changed-atom highlighting are retained. Invalid view options leave
         the current dataset and state intact.
@@ -579,7 +588,7 @@ class TransformGraph(anywidget.AnyWidget):
         if selected_direction not in ("higher", "lower"):
             raise ValueError("direction must be higher or lower")
         view = dataset.view(
-            property=property,
+            property_name=property_name,
             filters=filters,
             max_nodes=max_nodes,
             direction=selected_direction,
@@ -588,7 +597,7 @@ class TransformGraph(anywidget.AnyWidget):
         self._suspend_refresh = True
         try:
             self._dataset = dataset
-            self.property_name = view.property
+            self.property_name = view.property_name
             self.direction = selected_direction
             self.filters = asdict(view.filters)
             self.max_nodes = view.max_nodes
@@ -602,7 +611,7 @@ class TransformGraph(anywidget.AnyWidget):
         dataset = deepcopy(self._dataset, memo)
         clone = TransformGraph(
             dataset,
-            property=state.property_name,
+            property_name=state.property_name,
             filters=state.filters,
             max_nodes=state.max_nodes,
             height=state.height,

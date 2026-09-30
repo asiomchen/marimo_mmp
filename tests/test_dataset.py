@@ -389,7 +389,7 @@ def test_filtering_ranking_truncation_and_fold_change():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
     view = dataset.view(
         filters={
-            "direction": "gain",
+            "effect": "gain",
             "min_support": 2,
             "quality": ["Strong", "Moderate"],
             "text": "[*:1]",
@@ -397,32 +397,34 @@ def test_filtering_ranking_truncation_and_fold_change():
         max_nodes=5,
     )
     assert len(view.records) == 5
-    assert view.total_matching > len(view.records)
+    assert view.matching_count > len(view.records)
     assert view.truncated
     keys = [
         (
             {"Strong": 0, "Moderate": 1, "Exploratory": 2}[
-                record.properties[view.property].evidence.value
+                record.properties[view.property_name].evidence.value
             ],
-            -record.properties[view.property].count,
+            -record.properties[view.property_name].count,
         )
         for record in view.records
     ]
     assert keys == sorted(keys)
-    assert all(record.properties[view.property].median > 0 for record in view.records)
-    stats = view.records[0].properties[view.property]
+    assert all(
+        record.properties[view.property_name].median > 0 for record in view.records
+    )
+    stats = view.records[0].properties[view.property_name]
     assert stats.min is not None
     assert stats.max is not None
 
 
 def test_view_direction_orients_gain_and_loss_filters():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    gains = dataset.view(filters={"direction": "gain"}, max_nodes=100)
+    gains = dataset.view(filters={"effect": "gain"}, max_nodes=100)
     gains_when_lower = dataset.view(
-        filters={"direction": "loss"}, max_nodes=100, direction="lower"
+        filters={"effect": "loss"}, max_nodes=100, direction="lower"
     )
     losses_when_lower = dataset.view(
-        filters={"direction": "gain"}, max_nodes=100, direction="lower"
+        filters={"effect": "gain"}, max_nodes=100, direction="lower"
     )
 
     assert gains.records
@@ -441,18 +443,16 @@ def test_view_direction_validates_orientation_and_filter():
 
     with pytest.raises(ValueError, match="direction must be higher or lower"):
         dataset.view(direction="sideways")
-    with pytest.raises(
-        ValueError, match="direction must be all, gain, loss, or neutral"
-    ):
-        dataset.view(filters={"direction": "up"})
+    with pytest.raises(ValueError, match="effect must be all, gain, loss, or neutral"):
+        dataset.view(filters={"effect": "up"})
 
 
 def test_filters_normalize_scalar_and_case_insensitive_values():
     filters = TransformFilters.coerce(
-        {"direction": "Gain", "quality": "strong", "radii": 1, "min_abs_effect": 1}
+        {"effect": "Gain", "quality": "strong", "radii": 1, "min_abs_effect": 1}
     )
     assert filters == TransformFilters(
-        direction="gain", quality=("Strong",), radii=(1,), min_abs_effect=1.0
+        effect="gain", quality=("Strong",), radii=(1,), min_abs_effect=1.0
     )
     assert TransformFilters.coerce(
         {"quality": ["moderate", "Strong"], "radii": [2, 1]}
@@ -463,7 +463,7 @@ def test_filters_normalize_scalar_and_case_insensitive_values():
 @pytest.mark.parametrize(
     ("filters", "error"),
     [
-        ({"direction": 1}, TypeError),
+        ({"effect": 1}, TypeError),
         ({"text": None}, TypeError),
         ({"min_support": 0}, ValueError),
         ({"min_support": 2.5}, TypeError),
@@ -495,7 +495,7 @@ def test_view_rejects_invalid_max_nodes(max_nodes, error):
 
 
 def test_dataset_is_frozen_and_hides_private_source_pairs():
-    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=DATABASE)
     assert "_source_pairs" not in inspect.signature(TransformDataset).parameters
     assert "_source_pairs" not in repr(dataset)
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -508,7 +508,7 @@ def test_dataset_is_frozen_and_hides_private_source_pairs():
 
 
 def test_direct_dataset_construction_loads_mmpdb_provenance():
-    loaded = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    loaded = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=DATABASE)
     direct = TransformDataset(
         loaded.records,
         loaded.properties,
@@ -547,7 +547,7 @@ def test_mmpdb_provenance_is_eager_directional_and_read_only(tmp_path):
     readonly.write_bytes(DATABASE.read_bytes())
     readonly.chmod(0o444)
     dataset = TransformDataset.from_tsv(
-        TRANSFORMS, original_smiles=ORIGINAL, mmpdb=readonly
+        TRANSFORMS, original_smiles=ORIGINAL, mmpdb_path=readonly
     )
     assert dataset.mmpdb_path == readonly
     readonly.unlink()
@@ -577,7 +577,7 @@ def test_mmpdb_special_character_paths_preserve_provenance_and_files(
     tmp_path: Path, relative_path: str
 ):
     payload = first_row_text().encode()
-    reference = TransformDataset.from_tsv(payload, mmpdb=DATABASE)
+    reference = TransformDataset.from_tsv(payload, mmpdb_path=DATABASE)
     database = tmp_path / relative_path
     database.parent.mkdir(parents=True, exist_ok=True)
     original_bytes = DATABASE.read_bytes()
@@ -585,7 +585,7 @@ def test_mmpdb_special_character_paths_preserve_provenance_and_files(
     database.chmod(0o444)
     original_paths = set(tmp_path.rglob("*"))
 
-    dataset = TransformDataset.from_tsv(payload, mmpdb=database)
+    dataset = TransformDataset.from_tsv(payload, mmpdb_path=database)
 
     assert dataset.mmpdb_path == database
     assert dataset.records == reference.records
@@ -599,15 +599,15 @@ def test_mmpdb_special_character_paths_preserve_provenance_and_files(
 
 @pytest.mark.parametrize("loader", ["from_tsv", "from_df"])
 def test_all_source_pairs_remain_available_after_database_cleanup(tmp_path, loader):
-    reference = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    reference = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=DATABASE)
     database = tmp_path / "uploaded.mmpdb"
     database.write_bytes(DATABASE.read_bytes())
     if loader == "from_df":
         dataset = TransformDataset.from_df(
-            pd.read_csv(TRANSFORMS, sep="\t"), mmpdb=database
+            pd.read_csv(TRANSFORMS, sep="\t"), mmpdb_path=database
         )
     else:
-        dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb=database)
+        dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=database)
     database.unlink()
 
     for record in dataset.records:
@@ -626,7 +626,7 @@ def test_all_source_pairs_remain_available_after_database_cleanup(tmp_path, load
 
 
 def test_source_pairs_filter_missing_selected_property_values_by_default(tmp_path):
-    source = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    source = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=DATABASE)
     record = next(
         item
         for item in source.records
@@ -657,7 +657,7 @@ def test_source_pairs_filter_missing_selected_property_values_by_default(tmp_pat
             (compound_id, property_id),
         )
 
-    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb=database)
+    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=database)
     database.unlink()
     measured_pairs = dataset.source_pairs(record.id, "pIC50")
     all_pairs = dataset.source_pairs(record.id, "pIC50", include_missing=True)
@@ -696,12 +696,12 @@ def test_source_pairs_cache_every_property_after_database_cleanup(tmp_path):
     for column in list(frame.columns):
         if column.startswith("pIC50_"):
             frame[column.replace("pIC50_", "logD_")] = frame[column]
-    dataset = TransformDataset.from_df(frame, mmpdb=database)
+    dataset = TransformDataset.from_df(frame, mmpdb_path=database)
     database.unlink()
 
     record = dataset.records[0]
     original_pairs = dataset.source_pairs(record.id, "pIC50")
-    extra_pairs = dataset.view(property="logD").source_pairs(record.id)
+    extra_pairs = dataset.view(property_name="logD").source_pairs(record.id)
     assert original_pairs
     assert len(extra_pairs) == len(original_pairs)
     for original, extra in zip(original_pairs, extra_pairs, strict=True):
@@ -716,7 +716,7 @@ def test_source_pairs_cache_every_property_after_database_cleanup(tmp_path):
 def test_reversed_rule_swaps_source_pair_direction(tmp_path):
     database = tmp_path / "reversed.mmpdb"
     database.write_bytes(DATABASE.read_bytes())
-    direct = TransformDataset.from_tsv(first_row_text().encode(), mmpdb=DATABASE)
+    direct = TransformDataset.from_tsv(first_row_text().encode(), mmpdb_path=DATABASE)
     row = direct.records[0].properties["pIC50"]
     reversed_statistics = {}
     for name, source in (
@@ -734,7 +734,7 @@ def test_reversed_rule_swaps_source_pair_direction(tmp_path):
         pIC50_to_smiles=row.from_smiles,
         **reversed_statistics,
     )
-    reversed_dataset = TransformDataset.from_tsv(reversed_data, mmpdb=database)
+    reversed_dataset = TransformDataset.from_tsv(reversed_data, mmpdb_path=database)
     database.unlink()
     direct_pair = direct.source_pairs("1")[0]
     reversed_pair = reversed_dataset.source_pairs("1")[0]
@@ -749,7 +749,7 @@ def test_reversed_rule_swaps_source_pair_direction(tmp_path):
 @pytest.mark.parametrize("args", [("does-not-exist",), ("1", "logD")])
 def test_source_pairs_rejects_unknown_id_or_property_with_and_without_mmpdb(args):
     without = TransformDataset.from_tsv(TRANSFORMS)
-    with_mmpdb = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    with_mmpdb = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=DATABASE)
     for dataset in (without, with_mmpdb):
         with pytest.raises(KeyError, match="unknown transform ID/property"):
             dataset.source_pairs(*args)
@@ -759,7 +759,7 @@ def test_source_pairs_rejects_unknown_id_or_property_with_and_without_mmpdb(args
 def test_mismatched_database_reference_and_missing_property_are_rejected():
     with pytest.raises(TransformValidationError, match="not found"):
         TransformDataset.from_tsv(
-            mutate_first_row(pIC50_rule_environment_id="999999"), mmpdb=DATABASE
+            mutate_first_row(pIC50_rule_environment_id="999999"), mmpdb_path=DATABASE
         )
 
     lines = first_row_text().splitlines()
@@ -770,7 +770,7 @@ def test_mismatched_database_reference_and_missing_property_are_rejected():
         "\t".join(header + extra_header) + "\n" + "\t".join(values + values[2:]) + "\n"
     )
     with pytest.raises(TransformValidationError, match="absent from MMPDB"):
-        TransformDataset.from_tsv(data.encode(), mmpdb=DATABASE)
+        TransformDataset.from_tsv(data.encode(), mmpdb_path=DATABASE)
 
 
 def test_500_product_view_is_stable():
@@ -789,3 +789,41 @@ def test_500_product_view_is_stable():
     second = [record.id for record in dataset.view(max_nodes=100).records]
     assert len(first) == 100
     assert first == second
+
+
+def test_filters_use_effect_and_reject_old_direction_key():
+    assert TransformFilters(effect="Loss").effect == "loss"
+    with pytest.raises(ValueError, match="effect must be all, gain, loss, or neutral"):
+        TransformFilters(effect="up")
+    with pytest.raises(TypeError, match="effect filter must be a string"):
+        TransformFilters(effect=cast(Any, 1))
+    with pytest.raises(TypeError):
+        TransformFilters(**cast(Any, {"direction": "gain"}))
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    with pytest.raises(ValueError, match="unknown filters: direction"):
+        dataset.view(filters={"direction": "gain"})
+
+
+def test_old_keyword_names_are_rejected():
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    with pytest.raises(TypeError):
+        dataset.view(**cast(Any, {"property": "pIC50"}))
+    with pytest.raises(TypeError):
+        TransformDataset.from_tsv(TRANSFORMS, **cast(Any, {"mmpdb": DATABASE}))
+    with pytest.raises(TypeError):
+        TransformDataset.from_df(
+            pd.read_csv(TRANSFORMS, sep="\t"), **cast(Any, {"mmpdb": DATABASE})
+        )
+
+
+def test_dataset_has_mmpdb_property_and_compact_reprs():
+    plain = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
+    assert plain.has_mmpdb is False
+    assert TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=DATABASE).has_mmpdb is True
+    view = plain.view()
+    assert view.property_name == plain.properties[0]
+    assert view.matching_count >= len(view.records)
+    assert len(repr(plain)) < 300
+    assert len(repr(view)) < 300
+    assert "records=" in repr(plain)
+    assert "property_name=" in repr(view)

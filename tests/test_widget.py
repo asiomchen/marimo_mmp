@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import FrozenInstanceError, asdict, replace
 from pathlib import Path
 from statistics import median
-from typing import cast
+from typing import Any, cast
 
 import marimo as mo
 import pandas as pd
@@ -163,7 +163,7 @@ def test_highlighting_is_opt_in_and_preserved_across_refreshes_and_copies(
         else TransformGraph(dataset)
     )
     graph.max_nodes = 1
-    graph.filters = {"direction": "gain"}
+    graph.filters = {"effect": "gain"}
     graph.update(TransformDataset.from_df(frame, original_smiles="CCO"))
     clone = deepcopy(graph)
     wrapped_clone = deepcopy(mo.ui.anywidget(graph))
@@ -269,7 +269,7 @@ def test_depiction_cache_only_updates_for_new_assets_and_resets_for_a_new_datase
     assert graph.depictions == expanded_depictions
     assert len(depiction_events) == 1
 
-    graph.filters = {"min_support": 2, "direction": "all"}
+    graph.filters = {"min_support": 2, "effect": "all"}
     assert graph.depictions == expanded_depictions
     assert len(depiction_events) == 1
 
@@ -329,15 +329,13 @@ def test_direction_reorients_payload_counts_and_gain_filter():
         "revision": 1,
         "property_name": "pIC50",
         "direction": "lower",
-        "filters": {"direction": "gain"},
+        "filters": {"effect": "gain"},
         "max_nodes": 100,
     }
     assert graph.direction == "lower"
-    assert graph.state.filters.direction == "gain"
+    assert graph.state.filters.effect == "gain"
     assert graph.state.shown_count
-    assert all(
-        record.properties["pIC50"].median < 0 for record in graph.state.shown_compounds
-    )
+    assert all(record.properties["pIC50"].median < 0 for record in graph.state.records)
 
 
 def test_direction_rejects_unknown_orientation():
@@ -352,14 +350,14 @@ def test_direction_rejects_unknown_orientation():
 def test_embedded_controls_refresh_the_graph_state():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
     graph = TransformGraph(dataset, max_nodes=100)
-    graph.filters = {"min_support": 2, "direction": "all"}
+    graph.filters = {"min_support": 2, "effect": "all"}
     assert graph.state.shown_count == 27
-    assert graph.state.filters == TransformFilters(min_support=2, direction="all")
+    assert graph.state.filters == TransformFilters(min_support=2, effect="all")
     assert "filters" not in graph.data
     assert "property" not in graph.data
 
-    graph.filters = {"quality": [], "radii": [], "direction": "all"}
-    assert graph.state.shown_compounds == ()
+    graph.filters = {"quality": [], "radii": [], "effect": "all"}
+    assert graph.state.records == ()
     assert graph.selected_id is None
 
 
@@ -367,7 +365,7 @@ def test_embedded_controls_refresh_the_graph_state():
     ("name", "value"),
     [
         ("filters", {"bogus": 1}),
-        ("filters", {"direction": "sideways"}),
+        ("filters", {"effect": "sideways"}),
         ("property_name", "missing"),
         ("max_nodes", True),
     ],
@@ -412,14 +410,14 @@ def test_atomic_control_request_refreshes_once_and_publishes_accepted_state(
         "revision": 1,
         "property_name": "pIC50",
         "direction": "higher",
-        "filters": {"direction": "gain", "min_support": 2},
+        "filters": {"effect": "gain", "min_support": 2},
         "max_nodes": 12,
     }
 
     assert len(refreshes) == 1
     assert graph._control_response == {"revision": 1, "ok": True, "error": None}
     assert graph.property_name == "pIC50"
-    assert graph.state.filters == TransformFilters(direction="gain", min_support=2)
+    assert graph.state.filters == TransformFilters(effect="gain", min_support=2)
     assert graph.max_nodes == 12
     assert published == [("pIC50", graph.filters, 12)]
 
@@ -547,12 +545,12 @@ def test_transform_graph_uses_standard_reactive_marimo_wrapper():
     assert state.filters == TransformFilters()
     assert state.max_nodes == 5
     assert state.height == 760
-    assert state.shown_compounds == view.records
+    assert state.records == view.records
     assert state.shown_count == 5
-    assert state.matching_count == view.total_matching
+    assert state.matching_count == view.matching_count
     assert state.truncated == view.truncated
     assert state.selected_compound == view.records[0]
-    assert state.selected_stats == view.records[0].properties[view.property]
+    assert state.selected_stats == view.records[0].properties[view.property_name]
     assert state.rows() == view.rows()
     assert state.source_pairs() == ()
     with pytest.raises(FrozenInstanceError):
@@ -565,7 +563,7 @@ def test_transform_graph_uses_standard_reactive_marimo_wrapper():
     assert graph.state.selected_id == selected_id
     assert graph.state.selected_compound.id == selected_id
 
-    graph.filters = {"min_support": 2, "direction": "all"}
+    graph.filters = {"min_support": 2, "effect": "all"}
     refreshed = graph.state
     assert refreshed.filters.min_support == 2
     assert refreshed.shown_count == 5
@@ -606,7 +604,7 @@ def test_graph_state_properties_cannot_mutate_the_snapshot_or_dataset():
     snapshot = graph.state
     stats = snapshot.selected_stats
     assert stats is not None
-    record = snapshot.shown_compounds[0]
+    record = snapshot.records[0]
     properties = cast(MutableMapping[str, PropertyStats], record.properties)
     rows = snapshot.rows()
     with pytest.raises(TypeError):
@@ -628,7 +626,7 @@ def test_graph_state_constructor_hides_private_dataset():
     assert not any(name.startswith("_") for name in parameters)
     state = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=1).state
     assert "_dataset" not in repr(state)
-    assert not state.has_mmpdb()
+    assert not state.has_mmpdb
 
 
 def test_graph_state_is_hashable_and_matches_equal_snapshots():
@@ -638,7 +636,7 @@ def test_graph_state_is_hashable_and_matches_equal_snapshots():
     assert hash(deepcopy(graph).state) == hash(state)
     converted = asdict(state)
     assert converted["property_name"] == state.property_name
-    assert len(converted["shown_compounds"]) == state.shown_count
+    assert len(converted["records"]) == state.shown_count
 
 
 def test_transform_graph_requires_transform_dataset():
@@ -667,13 +665,13 @@ def test_constructor_selects_property_filters_limit_and_orientation(
     multi_property_dataset, typed_filters
 ):
     filters = (
-        TransformFilters(direction="gain", min_support=2)
+        TransformFilters(effect="gain", min_support=2)
         if typed_filters
-        else {"direction": "gain", "min_support": 2}
+        else {"effect": "gain", "min_support": 2}
     )
     graph = TransformGraph(
         multi_property_dataset,
-        property="logD",
+        property_name="logD",
         filters=filters,
         max_nodes=1,
         direction="lower",
@@ -682,10 +680,10 @@ def test_constructor_selects_property_filters_limit_and_orientation(
     assert state.available_properties == ("activity", "logD")
     assert state.property_name == "logD"
     assert state.direction == "lower"
-    assert state.filters == TransformFilters(direction="gain", min_support=2)
+    assert state.filters == TransformFilters(effect="gain", min_support=2)
     assert state.max_nodes == 1
     assert state.matching_count == 2
-    assert [record.id for record in state.shown_compounds] == ["1"]
+    assert [record.id for record in state.records] == ["1"]
     stats = state.selected_stats
     assert stats is not None
     assert stats.median == -2
@@ -700,14 +698,14 @@ def test_update_accepts_dataset_and_options_and_retains_direction(
     graph.selected_id = "3"
     graph.update(
         multi_property_dataset,
-        property="logD",
-        filters={"direction": "gain"},
+        property_name="logD",
+        filters={"effect": "gain"},
         max_nodes=2,
         direction="lower",
     )
     assert graph.state.property_name == "logD"
     assert graph.state.direction == "lower"
-    assert [record.id for record in graph.state.shown_compounds] == ["1", "2"]
+    assert [record.id for record in graph.state.records] == ["1", "2"]
     assert graph.state.selected_id == "1"
     graph.update(multi_property_dataset)
     assert graph.state.property_name == "activity"
@@ -721,10 +719,10 @@ def test_update_accepts_dataset_and_options_and_retains_direction(
 @pytest.mark.parametrize(
     "options",
     [
-        {"property": "missing"},
+        {"property_name": "missing"},
         {"max_nodes": 0},
         {"direction": "up"},
-        {"filters": {"direction": "up"}},
+        {"filters": {"effect": "up"}},
     ],
 )
 def test_invalid_update_options_preserve_dataset_and_state(
@@ -744,11 +742,11 @@ def test_invalid_update_options_preserve_dataset_and_state(
 def test_graph_state_queries_source_pairs_after_database_cleanup(tmp_path):
     database = tmp_path / "uploaded.mmpdb"
     database.write_bytes(MMPDB.read_bytes())
-    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb=database)
+    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=database)
     database.unlink()
     state = TransformGraph(dataset, max_nodes=5).state
 
-    assert state.has_mmpdb()
+    assert state.has_mmpdb
     assert state.selected_id is not None
     assert state.source_pairs() == dataset.source_pairs(
         state.selected_id, state.property_name
@@ -781,3 +779,28 @@ def test_rdkit_svg_is_sanitized_and_change_highlighted():
         "#e08f1f" not in svg
     )  # RDKit serializes the explicit highlight color, not raw CSS.
     assert "atom-2" in svg
+
+
+def test_state_has_mmpdb_property_records_and_compact_repr():
+    dataset = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
+    graph = TransformGraph(dataset, property_name="pIC50")
+    state = graph.state
+    assert state.has_mmpdb is False
+    assert state.records == tuple(state.records)
+    assert len(repr(state)) < 300
+    assert "selected_id=" in repr(state)
+    with pytest.raises((AttributeError, TypeError)):
+        state.has_mmpdb = True
+    with pytest.raises(TypeError):
+        TransformGraph(dataset, **cast(Any, {"property": "pIC50"}))
+    with pytest.raises(TypeError):
+        graph.update(dataset, **cast(Any, {"property": "pIC50"}))
+    with pytest.raises(ValueError, match="effect"):
+        TransformGraph(dataset, filters={"effect": "up"})
+
+
+def test_loading_and_depicting_emits_no_rdkit_stderr(capfd):
+    molecule_svg.cache_clear()
+    dataset = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
+    TransformGraph(dataset, highlight_changes=True)
+    assert "not removing hydrogen" not in capfd.readouterr().err
