@@ -35,7 +35,10 @@ The implementation is divided across these files:
 
 | File | Responsibility |
 |---|---|
-| [dataset.py](src/marimo_mmp/dataset.py) | Transform validation, filtering, ranking, and in-memory source-pair provenance |
+| [dataset.py](src/marimo_mmp/dataset.py) | `TransformDataset` loaders and validation, `TransformView` filtering, ranking, and source-pair lookup |
+| [models.py](src/marimo_mmp/models.py) | Immutable records, statistics, evidence tiers and thresholds, filters, and source pairs |
+| [parsing.py](src/marimo_mmp/parsing.py) | TSV/CSV/gzip decoding, column discovery, and row and statistic validation |
+| [provenance.py](src/marimo_mmp/provenance.py) | Read-only MMPDB checks and in-memory source-pair loading |
 | [widget.py](src/marimo_mmp/widget.py) | Payload construction, synchronized traits, atomic controls, typed state, and copies |
 | [depiction.py](src/marimo_mmp/depiction.py) | Cached RDKit SVG drawing, optional changed-atom matching, and SVG sanitization |
 | [transform_graph.ts](frontend/transform_graph.ts) | Bundle entry: AFM lifecycle, model listeners, and view cleanup |

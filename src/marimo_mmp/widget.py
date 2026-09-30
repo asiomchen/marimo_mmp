@@ -13,16 +13,15 @@ from typing import Any
 import anywidget
 import traitlets
 
-from .dataset import (
+from .dataset import TransformDataset, TransformView
+from .depiction import molecule_svg
+from .models import (
     EvidenceThresholds,
     PropertyStats,
     SourcePair,
-    TransformDataset,
     TransformFilters,
     TransformRecord,
-    TransformView,
 )
-from .depiction import molecule_svg
 
 DEFAULT_GRAPH_HEIGHT = 1220
 
