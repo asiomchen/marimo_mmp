@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import copy
 import csv
+import dataclasses
 import gzip
+import inspect
 import io
 import pickle
 import sqlite3
 from collections.abc import MutableMapping
 from copy import deepcopy
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -296,6 +299,43 @@ def test_records_and_datasets_survive_pickle_round_trip():
         mutable["pIC50"] = record.properties["pIC50"]
 
 
+def test_record_properties_support_asdict_copy_and_block_every_mutator():
+    dataset = TransformDataset.from_tsv(first_row_text().encode())
+    record = dataset.records[0]
+    stats = record.properties["pIC50"]
+    converted = dataclasses.asdict(record)
+    assert converted["properties"] == {"pIC50": dataclasses.asdict(stats)}
+    assert dataclasses.asdict(dataset)["records"][0] == converted
+    assert copy.copy(record.properties) == record.properties
+    assert record.properties | {} == dict(record.properties)
+    mutable = cast(Any, record.properties)
+    mutators = [
+        lambda: mutable.update(pIC50=stats),
+        lambda: mutable.setdefault("logD", stats),
+        lambda: mutable.pop("pIC50"),
+        mutable.popitem,
+        mutable.clear,
+    ]
+    for mutate in mutators:
+        with pytest.raises(TypeError, match="read-only"):
+            mutate()
+    with pytest.raises(TypeError, match="read-only"):
+        mutable |= {"logD": stats}
+    assert dict(record.properties) == {"pIC50": stats}
+
+
+def test_records_and_datasets_hash_consistently_with_equality():
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    record = dataset.records[0]
+    rebuilt = TransformRecord(record.id, record.smiles, dict(record.properties))
+    assert hash(rebuilt) == hash(record)
+    assert {record, rebuilt, deepcopy(record)} == {record}
+    other = TransformRecord(record.id, record.smiles, {})
+    assert other != record
+    assert hash(dataset) == hash(TransformDataset.from_tsv(TRANSFORMS))
+    assert hash(pickle.loads(pickle.dumps(dataset))) == hash(dataset)
+
+
 def test_evidence_tier_boundaries():
     assert EvidenceTier.from_count(1) is EvidenceTier.EXPLORATORY
     assert EvidenceTier.from_count(2) is EvidenceTier.MODERATE
@@ -453,6 +493,54 @@ def test_view_rejects_invalid_max_nodes(max_nodes, error):
     dataset = TransformDataset.from_tsv(first_row_text().encode())
     with pytest.raises(error, match="max_nodes"):
         dataset.view(max_nodes=max_nodes)
+
+
+def test_dataset_is_frozen_and_hides_private_source_pairs():
+    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    assert "_source_pairs" not in inspect.signature(TransformDataset).parameters
+    assert "_source_pairs" not in repr(dataset)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cast(Any, dataset).records = ()
+    direct = TransformDataset(
+        dataset.records, dataset.properties, warnings=dataset.warnings
+    )
+    assert direct.source_pairs(dataset.records[0].id) == ()
+    assert direct == TransformDataset.from_tsv(TRANSFORMS)
+
+
+def test_direct_dataset_construction_loads_mmpdb_provenance():
+    loaded = TransformDataset.from_tsv(TRANSFORMS, mmpdb=DATABASE)
+    direct = TransformDataset(
+        loaded.records,
+        loaded.properties,
+        mmpdb_path=DATABASE,
+        warnings=loaded.warnings,
+    )
+    assert direct == loaded
+    record_id = loaded.records[0].id
+    assert direct.source_pairs(record_id) == loaded.source_pairs(record_id)
+
+
+def test_direct_dataset_construction_is_validated():
+    record = TransformDataset.from_tsv(first_row_text().encode()).records[0]
+    with pytest.raises(TransformValidationError, match="at least one record"):
+        TransformDataset((), ("pIC50",))
+    with pytest.raises(TypeError, match="TransformRecord"):
+        TransformDataset(cast(tuple[TransformRecord, ...], ("1",)), ("pIC50",))
+    with pytest.raises(TransformValidationError, match="duplicate transform IDs: "):
+        TransformDataset((record, record), ("pIC50",))
+    with pytest.raises(TypeError, match="properties"):
+        TransformDataset((record,), ())
+    with pytest.raises(TransformValidationError, match="properties must be unique"):
+        TransformDataset((record,), ("pIC50", "pIC50"))
+    with pytest.raises(TransformValidationError, match="unknown properties pIC50"):
+        TransformDataset((record,), ("logD",))
+    with pytest.raises(TransformValidationError, match="absent from MMPDB"):
+        TransformDataset(
+            (TransformRecord(record.id, record.smiles, {}),),
+            ("logD",),
+            mmpdb_path=DATABASE,
+        )
 
 
 def test_mmpdb_provenance_is_eager_directional_and_read_only(tmp_path):

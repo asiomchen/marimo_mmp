@@ -43,8 +43,13 @@ class TransformGraphState:
     matching_count: int
     query_smiles: str | None
     warnings: tuple[str, ...]
-    _has_mmpdb: bool = field(repr=False)
-    _dataset: TransformDataset = field(repr=False, compare=False)
+    _dataset: TransformDataset = field(init=False, repr=False, compare=False)
+
+    @classmethod
+    def _create(cls, dataset: TransformDataset, **fields: Any) -> TransformGraphState:
+        state = cls(**fields)
+        object.__setattr__(state, "_dataset", dataset)
+        return state
 
     @property
     def shown_count(self) -> int:
@@ -73,7 +78,7 @@ class TransformGraphState:
 
     def has_mmpdb(self) -> bool:
         """Return whether source-pair provenance was loaded from an MMPDB."""
-        return self._has_mmpdb
+        return self._dataset.mmpdb_path is not None
 
     def rows(self) -> list[dict[str, Any]]:
         """Return table-ready rows for the shown compounds."""
@@ -534,7 +539,8 @@ class TransformGraph(anywidget.AnyWidget):
                 f"graph payload references unknown transform ID {exc.args[0]!r}"
             ) from exc
         selected_id = self.selected_id if self.selected_id in product_ids else None
-        return TransformGraphState(
+        return TransformGraphState._create(
+            self._dataset,
             property_name=self.property_name,
             available_properties=tuple(
                 self.data.get("properties", self._dataset.properties)
@@ -549,8 +555,6 @@ class TransformGraph(anywidget.AnyWidget):
             matching_count=int(self.data.get("matching", len(shown_compounds))),
             query_smiles=self.data.get("querySmiles"),
             warnings=tuple(self.data.get("warnings", ())),
-            _has_mmpdb=bool(self.data.get("hasMmpdb", False)),
-            _dataset=self._dataset,
         )
 
     def update(

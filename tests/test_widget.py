@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 import json
 import re
 from collections.abc import MutableMapping
@@ -618,6 +619,26 @@ def test_graph_state_properties_cannot_mutate_the_snapshot_or_dataset():
     assert snapshot.rows() == rows
     assert graph.data["products"][0]["median"] == stats.median
     assert deepcopy(graph).state == snapshot
+
+
+def test_graph_state_constructor_hides_private_dataset():
+    from marimo_mmp.widget import TransformGraphState
+
+    parameters = inspect.signature(TransformGraphState).parameters
+    assert not any(name.startswith("_") for name in parameters)
+    state = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=1).state
+    assert "_dataset" not in repr(state)
+    assert not state.has_mmpdb()
+
+
+def test_graph_state_is_hashable_and_matches_equal_snapshots():
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=5)
+    state = graph.state
+    assert hash(state) == hash(graph.state)
+    assert hash(deepcopy(graph).state) == hash(state)
+    converted = asdict(state)
+    assert converted["property_name"] == state.property_name
+    assert len(converted["shown_compounds"]) == state.shown_count
 
 
 def test_transform_graph_requires_transform_dataset():

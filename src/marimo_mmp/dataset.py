@@ -10,12 +10,10 @@ import sqlite3
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import closing
-from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from os import PathLike
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, BinaryIO, TextIO
 
 import pandas as pd
@@ -121,6 +119,25 @@ class PropertyStats:
         )
 
 
+class _FrozenDict(dict[str, PropertyStats]):
+    """Read-only, hashable dict that copies, pickles, and ``asdict``s like a dict."""
+
+    __slots__ = ()
+
+    def _readonly(self, *args: Any, **kwargs: Any) -> Any:
+        raise TypeError("transform record properties are read-only")
+
+    __setitem__ = __delitem__ = __ior__ = _readonly
+    clear = pop = popitem = setdefault = update = _readonly
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.items()))
+
+    def __reduce__(self) -> tuple[type[_FrozenDict], tuple[dict[str, PropertyStats]]]:
+        # The default dict protocol restores items through blocked __setitem__.
+        return (type(self), (dict(self),))
+
+
 @dataclass(frozen=True, slots=True)
 class TransformRecord:
     id: str
@@ -128,20 +145,8 @@ class TransformRecord:
     properties: Mapping[str, PropertyStats]
 
     def __post_init__(self) -> None:
-        # Copy before wrapping so callers cannot mutate through their input dict.
-        object.__setattr__(self, "properties", MappingProxyType(dict(self.properties)))
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> TransformRecord:
-        # Mapping proxies cannot be deep-copied directly; rebuild the frozen record.
-        clone = TransformRecord(
-            self.id, self.smiles, deepcopy(dict(self.properties), memo)
-        )
-        memo[id(self)] = clone
-        return clone
-
-    def __reduce__(self) -> tuple[type[TransformRecord], tuple[Any, ...]]:
-        # Mapping proxies cannot be pickled; rebuild from a plain dict.
-        return (TransformRecord, (self.id, self.smiles, dict(self.properties)))
+        # Copy so callers cannot mutate the record through their input dict.
+        object.__setattr__(self, "properties", _FrozenDict(self.properties))
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,13 +314,14 @@ class TransformView:
         return result
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class TransformDataset:
     """Transform results with optional in-memory source-pair provenance.
 
-    ``mmpdb_path`` records the source database path for provenance only.
-    Datasets loaded with ``from_df`` or ``from_tsv`` do not need that file
-    after loading completes.
+    Prefer the ``from_df`` and ``from_tsv`` loaders, which parse and validate
+    mmpdb output. Direct construction validates record consistency and, when
+    ``mmpdb_path`` is given, eagerly loads source pairs from that database.
+    Datasets do not need the database file after construction completes.
     """
 
     records: tuple[TransformRecord, ...]
@@ -325,8 +331,54 @@ class TransformDataset:
     warnings: tuple[str, ...] = ()
     evidence_thresholds: EvidenceThresholds = field(default_factory=EvidenceThresholds)
     _source_pairs: dict[tuple[str, str], tuple[SourcePair, ...]] = field(
-        default_factory=dict, repr=False
+        default_factory=dict, init=False, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        records = tuple(self.records)
+        if not records:
+            raise TransformValidationError("dataset must contain at least one record")
+        if not all(isinstance(record, TransformRecord) for record in records):
+            raise TypeError("records must be TransformRecord instances")
+        duplicate_ids = sorted(
+            record_id
+            for record_id, count in Counter(record.id for record in records).items()
+            if count > 1
+        )
+        if duplicate_ids:
+            raise TransformValidationError(
+                f"duplicate transform IDs: {', '.join(duplicate_ids)}"
+            )
+        properties = tuple(self.properties)
+        if not properties or not all(isinstance(name, str) for name in properties):
+            raise TypeError("properties must be a non-empty sequence of strings")
+        if len(set(properties)) != len(properties):
+            raise TransformValidationError("properties must be unique")
+        known = set(properties)
+        for record in records:
+            unknown = sorted(set(record.properties) - known)
+            if unknown:
+                raise TransformValidationError(
+                    f"transform {record.id}: unknown properties {', '.join(unknown)}"
+                )
+        if self.original_smiles is not None and not isinstance(
+            self.original_smiles, str
+        ):
+            raise TypeError("original_smiles must be a string or None")
+        warnings = tuple(self.warnings)
+        if not all(isinstance(warning, str) for warning in warnings):
+            raise TypeError("warnings must be strings")
+        object.__setattr__(self, "records", records)
+        object.__setattr__(self, "properties", properties)
+        object.__setattr__(self, "warnings", warnings)
+        object.__setattr__(
+            self,
+            "evidence_thresholds",
+            EvidenceThresholds.coerce(self.evidence_thresholds),
+        )
+        if self.mmpdb_path is not None:
+            object.__setattr__(self, "mmpdb_path", Path(self.mmpdb_path))
+            _load_database(self)
 
     @classmethod
     def from_df(
@@ -512,7 +564,7 @@ class TransformDataset:
                 raise TransformValidationError(
                     "original_smiles is not a valid SMILES structure"
                 )
-        dataset = cls(
+        return cls(
             records=tuple(records),
             properties=tuple(property_columns),
             original_smiles=original_smiles,
@@ -520,9 +572,6 @@ class TransformDataset:
             warnings=tuple(sorted(warning_set)),
             evidence_thresholds=selected_evidence_thresholds,
         )
-        if dataset.mmpdb_path is not None:
-            _load_database(dataset)
-        return dataset
 
     @classmethod
     def from_tsv(
