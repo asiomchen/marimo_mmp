@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from importlib.resources import files
@@ -270,7 +271,7 @@ def _payload(
 
 
 class TransformGraph(anywidget.AnyWidget):
-    """Render a prepared matched-molecular-pair view as an interactive graph.
+    """Render a matched-molecular-pair dataset as an interactive graph.
 
     Python owns filtering, aggregation, molecule depiction, and conversion to
     browser-safe state. The packaged Anywidget frontend owns layout and user
@@ -278,9 +279,14 @@ class TransformGraph(anywidget.AnyWidget):
 
     Parameters
     ----------
-    view : TransformView
-        Prepared dataset view that determines the property, filters, products,
-        and maximum number of visible nodes.
+    dataset : TransformDataset
+        Loaded transform records and optional source-pair provenance.
+    property : str or None, default=None
+        Property to display. Defaults to the dataset's first property.
+    filters : TransformFilters or mapping or None, default=None
+        Initial product filters. Defaults to all products.
+    max_nodes : int, default=100
+        Maximum number of visible products after filtering and ranking.
     height : int, default=DEFAULT_GRAPH_HEIGHT
         Maximum graph-stage height in pixels. The rendered stage also caps
         itself to the browser viewport. Values below 480 are rejected by the
@@ -323,21 +329,27 @@ class TransformGraph(anywidget.AnyWidget):
 
     def __init__(
         self,
-        view: TransformView,
+        dataset: TransformDataset,
         *,
+        property: str | None = None,
+        filters: TransformFilters | Mapping[str, Any] | None = None,
+        max_nodes: int = 100,
         height: int = DEFAULT_GRAPH_HEIGHT,
         direction: str = "higher",
         highlight_changes: bool = False,
         **kwargs: Any,
     ) -> None:
-        if not isinstance(view, TransformView):
-            raise TypeError(
-                "TransformGraph expects a TransformView from dataset.view()"
-            )
+        if not isinstance(dataset, TransformDataset):
+            raise TypeError("TransformGraph expects a TransformDataset")
         if not isinstance(highlight_changes, bool):
             raise TypeError("highlight_changes must be a boolean")
+        if direction not in ("higher", "lower"):
+            raise ValueError("direction must be higher or lower")
+        view = dataset.view(
+            property=property, filters=filters, max_nodes=max_nodes, direction=direction
+        )
         self._highlight_changes = highlight_changes
-        self._dataset = view.dataset
+        self._dataset = dataset
         self._suspend_refresh = True
         self._control_revision = 0
         initial = view.records[0].id if view.records else None
@@ -512,30 +524,54 @@ class TransformGraph(anywidget.AnyWidget):
             _dataset=self._dataset,
         )
 
-    def update(self, view: TransformView) -> None:
-        """Replace the graph data while retaining a still-visible selection."""
-        dataset_changed = view.dataset is not self._dataset
-        self._dataset = view.dataset
+    def update(
+        self,
+        dataset: TransformDataset,
+        *,
+        property: str | None = None,
+        filters: TransformFilters | Mapping[str, Any] | None = None,
+        max_nodes: int = 100,
+        direction: str | None = None,
+    ) -> None:
+        """Replace graph data and filters, retaining a still-visible selection.
+
+        Property, filters, and product limit use the constructor defaults when
+        omitted. Direction retains its current value unless supplied. Height
+        and changed-atom highlighting are retained. Invalid view options leave
+        the current dataset and state intact.
+        """
+        if not isinstance(dataset, TransformDataset):
+            raise TypeError("TransformGraph.update expects a TransformDataset")
+        selected_direction = self.direction if direction is None else direction
+        if selected_direction not in ("higher", "lower"):
+            raise ValueError("direction must be higher or lower")
+        view = dataset.view(
+            property=property,
+            filters=filters,
+            max_nodes=max_nodes,
+            direction=selected_direction,
+        )
+        dataset_changed = dataset is not self._dataset
         self._suspend_refresh = True
         try:
+            self._dataset = dataset
             self.property_name = view.property
+            self.direction = selected_direction
             self.filters = asdict(view.filters)
             self.max_nodes = view.max_nodes
+            self._refresh(view=view, reset_depictions=dataset_changed)
         finally:
             self._suspend_refresh = False
-        self._refresh(reset_depictions=dataset_changed)
 
     def __deepcopy__(self, memo: dict[int, Any]) -> TransformGraph:
         """Copy the domain-aware widget without copying anywidget comm state."""
         state = self.state
         dataset = deepcopy(self._dataset, memo)
         clone = TransformGraph(
-            dataset.view(
-                property=state.property_name,
-                filters=state.filters,
-                max_nodes=state.max_nodes,
-                direction=state.direction,
-            ),
+            dataset,
+            property=state.property_name,
+            filters=state.filters,
+            max_nodes=state.max_nodes,
             height=state.height,
             direction=state.direction,
             highlight_changes=self.highlight_changes,

@@ -137,7 +137,7 @@ def _(dataset, load_error, mo):
 @app.cell
 def _(TransformGraph, dataset, mo):
     graph = (
-        mo.ui.anywidget(TransformGraph(dataset.view(max_nodes=100), highlight_changes=False))
+        mo.ui.anywidget(TransformGraph(dataset, max_nodes=100, highlight_changes=False))
         if dataset is not None
         else None
     )

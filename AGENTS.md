@@ -7,8 +7,8 @@ Python anywidget package (`marimo-mmp`) visualizing mmpdb matched-molecular-pair
 - `src/marimo_mmp/` — Python package (`dataset.py`, `widget.py`, `depiction.py`)
 - `frontend/` — strict TypeScript + CSS sources; single widget module `transform_graph.ts`
 - `notebooks/` — marimo notebooks; run with `uv run marimo edit notebooks/<name>.py`
-- `scripts/h1_pipeline.py` — builds `data/processed/h1_ic50.mmpdb` from the ChEMBL web API (network, slow)
-- `WIDGET_ARCHITECTURE.md`, `NOTES.md` — architecture reference and data-pipeline methodology
+- `scripts/` — package build and distribution verification tools
+- `WIDGET_ARCHITECTURE.md` — architecture reference; `README.md` documents example-data provenance
 
 ## Commands
 

@@ -10,7 +10,7 @@
 
 `TransformGraph` converts matched-molecular-pair results into an interactive graph. Python validates data, filters records, and generates molecular depictions. An Anywidget Front-End Module (AFM) renders the graph and sends interaction state back to Python. Notebooks use `mo.ui.anywidget()` to make those interactions inputs to marimo’s reactive cell graph; the package itself does not depend on marimo.
 
-This reference describes the implementation in this repository. For design comparisons with other widgets, see [Anywidget architecture comparisons](ANYWIDGET_ARCHITECTURE_COMPARISON.md).
+This reference describes the implementation in this repository.
 
 ## Ownership and source files
 
@@ -20,7 +20,7 @@ The dataset, synchronized widget model, and browser view have different lifetime
 flowchart LR
     T[Transform table] --> A[TransformDataset]
     DB[Optional MMPDB] -->|load relevant source pairs| A
-    A --> B[TransformView]
+    A -->|TransformGraph dataset and options| B[Internal TransformView]
     B --> C[_payload]
     C --> D[TransformGraph traits]
     D <--> H[Anywidget host]
@@ -63,7 +63,7 @@ The explorer writes uploaded bytes into a temporary `.mmpdb` file inside an `Exi
 
 ## Python model and public state
 
-`TransformGraph` accepts a prepared `TransformView`. Its constructor builds a browser-safe payload and initializes ten synchronized traits.
+`TransformGraph` accepts a `TransformDataset` with optional `property`, `filters`, `max_nodes`, and `direction` arguments. It prepares a `TransformView` internally, builds a browser-safe payload, and initializes ten synchronized traits. The same direction controls both initial filtering and gain/loss coloring. `update(dataset, ...)` validates new options before replacing the current dataset, retains a still-visible selection, and preserves direction unless explicitly supplied. Omitted property, filters, and product limit use the constructor defaults. `dataset.view(...)` remains available for data-only queries.
 
 ### Payload and graph levels
 
@@ -105,7 +105,7 @@ Traits tagged with `sync=True` form the transport contract. Direction describes 
 
 Python observes changes to `property_name`, `direction`, `filters`, and `max_nodes` and rebuilds the view. `_suspend_refresh` prevents redundant observer calls when construction, `update()`, or an accepted browser request changes several controls together.
 
-`_refresh()` preserves the selected product if it remains visible. Otherwise, it selects the first visible record, or `None` for an empty view. Filtering retains previously encountered depictions and adds new ones. `update(view)` resets the depiction dictionary when the dataset object changes, then publishes the new assets and data together.
+`_refresh()` preserves the selected product if it remains visible. Otherwise, it selects the first visible record, or `None` for an empty view. Filtering retains previously encountered depictions and adds new ones. `update(dataset, ...)` resets the depiction dictionary when the dataset object changes, then publishes the new assets and data together.
 
 Direct Python assignments can trigger separate refreshes. Browser gestures use the atomic request/response path described below. Selection-only changes update `selected_id` without rebuilding the graph payload.
 
@@ -128,7 +128,7 @@ Changed-atom highlights require a reference structure and `highlight_changes=Tru
 Enable highlights explicitly when you need them:
 
 ```python
-raw_graph = TransformGraph(view, highlight_changes=True)
+raw_graph = TransformGraph(dataset, highlight_changes=True)
 ```
 
 With highlighting off, the query structure remains visible and product drawing skips MCS matching. Changing query SMILES, clearing or evicting cache entries, reloading the depiction module, or restarting the kernel can require fresh depictions.
@@ -146,7 +146,7 @@ for highlight in (False, True):
     for run in ("cold", "warm"):
         start = perf_counter()
         graph = TransformGraph(
-            dataset.view(max_nodes=100), highlight_changes=highlight
+            dataset, max_nodes=100, highlight_changes=highlight
         )
         print(highlight, run, perf_counter() - start)
 ```
@@ -176,7 +176,7 @@ dataset = TransformDataset.from_tsv(
     ),
 )
 for limit in (5, 25, 100):
-    graph = TransformGraph(dataset.view(max_nodes=limit))
+    graph = TransformGraph(dataset, max_nodes=limit)
     sizes = [
         len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
         for value in (graph.data, graph.depictions)
@@ -249,7 +249,7 @@ Construct and display the UI element in one cell:
 import marimo as mo
 from marimo_mmp import TransformGraph
 
-graph = mo.ui.anywidget(TransformGraph(dataset.view(max_nodes=100)))
+graph = mo.ui.anywidget(TransformGraph(dataset, max_nodes=100))
 graph
 ```
 
