@@ -362,6 +362,31 @@ def test_embedded_controls_refresh_the_graph_state():
     assert graph.selected_id is None
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("filters", {"bogus": 1}),
+        ("filters", {"direction": "sideways"}),
+        ("property_name", "missing"),
+        ("max_nodes", True),
+    ],
+)
+def test_invalid_direct_control_assignment_preserves_accepted_state(name, value):
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=5)
+    state = graph.state
+    data = dict(graph.data)
+    with pytest.raises((KeyError, TypeError, ValueError, traitlets.TraitError)):
+        setattr(graph, name, value)
+    assert graph.state == state
+    assert graph.data == data
+
+
+def test_direct_filter_assignment_is_normalized():
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS))
+    graph.filters = {"min_support": 2, "radii": [1, 2]}
+    assert graph.filters == asdict(TransformFilters(min_support=2, radii=(1, 2)))
+
+
 def test_atomic_control_request_refreshes_once_and_publishes_accepted_state(
     monkeypatch,
 ):

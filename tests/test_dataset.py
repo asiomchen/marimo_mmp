@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import gzip
 import io
+import pickle
 import sqlite3
 from collections.abc import MutableMapping
 from copy import deepcopy
@@ -279,6 +280,19 @@ def test_record_properties_are_immutable_and_detached_from_constructor_input():
             mutable["pIC50"] = original.properties["pIC50"]
         with pytest.raises(TypeError):
             del mutable["pIC50"]
+
+
+def test_records_and_datasets_survive_pickle_round_trip():
+    dataset = TransformDataset.from_tsv(
+        first_row_text().encode(), evidence_thresholds={"moderate": 3, "strong": 7}
+    )
+    restored = pickle.loads(pickle.dumps(dataset))
+    assert restored == dataset
+    record = restored.records[0]
+    assert record == dataset.records[0]
+    mutable = cast(MutableMapping[str, PropertyStats], record.properties)
+    with pytest.raises(TypeError):
+        mutable["pIC50"] = record.properties["pIC50"]
 
 
 def test_evidence_tier_boundaries():

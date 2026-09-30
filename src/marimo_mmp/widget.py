@@ -376,6 +376,35 @@ class TransformGraph(anywidget.AnyWidget):
         """Whether product depictions highlight differences from the query."""
         return self._highlight_changes
 
+    @traitlets.validate("property_name", "filters", "max_nodes")
+    def _validate_control(self, proposal: dict[str, Any]) -> Any:
+        """Reject invalid direct assignments before traitlets stores them."""
+        if getattr(self, "_suspend_refresh", False):
+            # Constructor, update(), and control requests validate the full view.
+            return proposal["value"]
+        name = proposal["trait"].name
+        controls = {
+            "property_name": self.property_name,
+            "filters": self.filters,
+            "max_nodes": self.max_nodes,
+            name: proposal["value"],
+        }
+        max_nodes = controls["max_nodes"]
+        if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
+            raise TypeError("max_nodes must be an integer")
+        view = self._dataset.view(
+            property=controls["property_name"],
+            filters=controls["filters"],
+            max_nodes=max_nodes,
+            direction=self.direction,
+        )
+        normalized = {
+            "property_name": view.property,
+            "filters": asdict(view.filters),
+            "max_nodes": view.max_nodes,
+        }
+        return normalized[name]
+
     @traitlets.observe("property_name", "filters", "max_nodes", "direction")
     def _controls_changed(self, change: dict[str, Any]) -> None:
         if getattr(self, "_suspend_refresh", False):

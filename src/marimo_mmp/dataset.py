@@ -139,6 +139,10 @@ class TransformRecord:
         memo[id(self)] = clone
         return clone
 
+    def __reduce__(self) -> tuple[type[TransformRecord], tuple[Any, ...]]:
+        # Mapping proxies cannot be pickled; rebuild from a plain dict.
+        return (TransformRecord, (self.id, self.smiles, dict(self.properties)))
+
 
 @dataclass(frozen=True, slots=True)
 class TransformFilters:
