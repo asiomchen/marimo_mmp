@@ -2,16 +2,15 @@
 
 __version__ = "0.0.1"
 
-from .dataset import (
+from .dataset import TransformDataset, TransformView
+from .models import (
     EvidenceThresholds,
     EvidenceTier,
     PropertyStats,
     SourcePair,
-    TransformDataset,
     TransformFilters,
     TransformRecord,
     TransformValidationError,
-    TransformView,
 )
 from .widget import (
     TransformGraph,

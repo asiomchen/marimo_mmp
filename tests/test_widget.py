@@ -1,11 +1,13 @@
 import hashlib
+import inspect
 import json
 import re
+from collections.abc import MutableMapping
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, asdict
+from dataclasses import FrozenInstanceError, asdict, replace
 from pathlib import Path
 from statistics import median
-from typing import cast
+from typing import Any, cast
 
 import marimo as mo
 import pandas as pd
@@ -14,11 +16,11 @@ import traitlets
 
 from marimo_mmp import (
     EvidenceThresholds,
+    PropertyStats,
     TransformDataset,
     TransformFilters,
     TransformGraph,
     TransformGraphState,
-    TransformView,
 )
 from marimo_mmp.depiction import molecule_svg
 
@@ -46,10 +48,8 @@ def _referenced_depictions(data):
 
 
 def test_graph_topology_payload_and_local_assets():
-    view = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL).view(
-        max_nodes=25
-    )
-    graph = TransformGraph(view)
+    dataset = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
+    graph = TransformGraph(dataset, max_nodes=25)
     assert len(graph.data["products"]) == 25
     assert {product["group"] for product in graph.data["products"]} <= {
         group["id"] for group in graph.data["groups"]
@@ -87,7 +87,13 @@ def test_graph_topology_payload_and_local_assets():
     assert graph.state.evidence_thresholds == EvidenceThresholds()
     assert len(json.dumps(graph.data, separators=(",", ":")).encode()) < 30_000
     assert graph.height == 1220
-    frontend_source = (ROOT / "frontend" / "transform_graph.ts").read_text()
+    frontend_source = "\n".join(
+        path.read_text()
+        for path in [
+            ROOT / "frontend" / "transform_graph.ts",
+            *sorted((ROOT / "frontend" / "transform_graph").glob("*.ts")),
+        ]
+    )
     css_source = (ROOT / "frontend" / "transform_graph.css").read_text()
     esm_source = graph._esm
     assert isinstance(esm_source, str)
@@ -158,13 +164,13 @@ def test_highlighting_is_opt_in_and_preserved_across_refreshes_and_copies(
     monkeypatch.setattr(widget_module, "molecule_svg", molecule_svg.__wrapped__)
 
     graph = (
-        TransformGraph(dataset.view(), highlight_changes=True)
+        TransformGraph(dataset, highlight_changes=True)
         if highlight_changes
-        else TransformGraph(dataset.view())
+        else TransformGraph(dataset)
     )
     graph.max_nodes = 1
-    graph.filters = {"direction": "gain"}
-    graph.update(TransformDataset.from_df(frame, original_smiles="CCO").view())
+    graph.filters = {"effect": "gain"}
+    graph.update(TransformDataset.from_df(frame, original_smiles="CCO"))
     clone = deepcopy(graph)
     wrapped_clone = deepcopy(mo.ui.anywidget(graph))
 
@@ -182,12 +188,12 @@ def test_highlighting_is_opt_in_and_preserved_across_refreshes_and_copies(
 def test_highlight_changes_requires_a_boolean():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
     with pytest.raises(TypeError, match="highlight_changes must be a boolean"):
-        TransformGraph(dataset.view(), highlight_changes=cast(bool, "false"))
+        TransformGraph(dataset, highlight_changes=cast(bool, "false"))
 
 
 def test_from_smiles_groups_aggregate_visible_directed_rules():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=100))
+    graph = TransformGraph(dataset, max_nodes=100)
 
     source = next(
         group for group in graph.data["fromGroups"] if group["from"] == "[*:1]C"
@@ -225,7 +231,7 @@ def test_from_smiles_groups_aggregate_visible_directed_rules():
 
 def test_from_smiles_aggregate_tracks_visible_children_after_truncation():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=5))
+    graph = TransformGraph(dataset, max_nodes=5)
 
     assert sum(group["productCount"] for group in graph.data["fromGroups"]) == 5
     assert {
@@ -235,7 +241,7 @@ def test_from_smiles_aggregate_tracks_visible_children_after_truncation():
 
 def test_depictions_are_deduplicated_and_dynamic_payload_stays_small():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=100))
+    graph = TransformGraph(dataset, max_nodes=100)
 
     assert len(json.dumps(graph.data, separators=(",", ":")).encode()) < 200_000
     assert _referenced_depictions(graph.data) <= set(graph.depictions)
@@ -254,7 +260,7 @@ def test_depictions_are_deduplicated_and_dynamic_payload_stays_small():
 
 def test_depiction_cache_only_updates_for_new_assets_and_resets_for_a_new_dataset():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=5))
+    graph = TransformGraph(dataset, max_nodes=5)
     depiction_events = []
     graph.observe(depiction_events.append, names="depictions")
     initial_depictions = dict(graph.depictions)
@@ -269,19 +275,19 @@ def test_depiction_cache_only_updates_for_new_assets_and_resets_for_a_new_datase
     assert graph.depictions == expanded_depictions
     assert len(depiction_events) == 1
 
-    graph.filters = {"min_support": 2, "direction": "all"}
+    graph.filters = {"min_support": 2, "effect": "all"}
     assert graph.depictions == expanded_depictions
     assert len(depiction_events) == 1
 
     replacement = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
-    graph.update(replacement.view(max_nodes=5))
+    graph.update(replacement, max_nodes=5)
     assert set(graph.depictions) == _referenced_depictions(graph.data)
     assert len(depiction_events) == 2
 
 
 def test_graph_height_is_configurable_and_synced():
-    view = TransformDataset.from_tsv(TRANSFORMS).view(max_nodes=5)
-    graph = TransformGraph(view, height=1250)
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    graph = TransformGraph(dataset, max_nodes=5, height=1250)
     assert graph.height == 1250
     graph.height = 720
     assert graph.height == 720
@@ -290,7 +296,7 @@ def test_graph_height_is_configurable_and_synced():
 def test_graph_exposes_custom_evidence_thresholds():
     thresholds = EvidenceThresholds(moderate=3, strong=8)
     dataset = TransformDataset.from_tsv(TRANSFORMS, evidence_thresholds=thresholds)
-    graph = TransformGraph(dataset.view(max_nodes=5))
+    graph = TransformGraph(dataset, max_nodes=5)
 
     assert graph.data["controlOptions"]["evidenceThresholds"] == {
         "moderate": 3,
@@ -312,8 +318,8 @@ def test_graph_exposes_custom_evidence_thresholds():
 
 def test_direction_reorients_payload_counts_and_gain_filter():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=100))
-    flipped = TransformGraph(dataset.view(max_nodes=100), direction="lower")
+    graph = TransformGraph(dataset, max_nodes=100)
+    flipped = TransformGraph(dataset, max_nodes=100, direction="lower")
 
     assert graph.direction == "higher"
     assert flipped.direction == "lower"
@@ -329,42 +335,68 @@ def test_direction_reorients_payload_counts_and_gain_filter():
         "revision": 1,
         "property_name": "pIC50",
         "direction": "lower",
-        "filters": {"direction": "gain"},
+        "filters": {"effect": "gain"},
         "max_nodes": 100,
     }
     assert graph.direction == "lower"
-    assert graph.state.filters.direction == "gain"
+    assert graph.state.filters.effect == "gain"
     assert graph.state.shown_count
-    assert all(
-        record.properties["pIC50"].median < 0 for record in graph.state.shown_compounds
-    )
+    assert all(record.properties["pIC50"].median < 0 for record in graph.state.records)
 
 
-def test_direction_trait_rejects_unknown_orientation():
-    view = TransformDataset.from_tsv(TRANSFORMS).view(max_nodes=5)
+def test_direction_rejects_unknown_orientation():
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    with pytest.raises(ValueError, match="direction must be higher or lower"):
+        TransformGraph(dataset, direction="up")
+    graph = TransformGraph(dataset, max_nodes=5)
     with pytest.raises(traitlets.TraitError):
-        TransformGraph(view, direction="up")
+        graph.direction = "up"
 
 
 def test_embedded_controls_refresh_the_graph_state():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=100))
-    graph.filters = {"min_support": 2, "direction": "all"}
+    graph = TransformGraph(dataset, max_nodes=100)
+    graph.filters = {"min_support": 2, "effect": "all"}
     assert graph.state.shown_count == 27
-    assert graph.state.filters == TransformFilters(min_support=2, direction="all")
+    assert graph.state.filters == TransformFilters(min_support=2, effect="all")
     assert "filters" not in graph.data
     assert "property" not in graph.data
 
-    graph.filters = {"quality": [], "radii": [], "direction": "all"}
-    assert graph.state.shown_compounds == ()
+    graph.filters = {"quality": [], "radii": [], "effect": "all"}
+    assert graph.state.records == ()
     assert graph.selected_id is None
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("filters", {"bogus": 1}),
+        ("filters", {"effect": "sideways"}),
+        ("property_name", "missing"),
+        ("max_nodes", True),
+    ],
+)
+def test_invalid_direct_control_assignment_preserves_accepted_state(name, value):
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=5)
+    state = graph.state
+    data = dict(graph.data)
+    with pytest.raises((KeyError, TypeError, ValueError, traitlets.TraitError)):
+        setattr(graph, name, value)
+    assert graph.state == state
+    assert graph.data == data
+
+
+def test_direct_filter_assignment_is_normalized():
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS))
+    graph.filters = {"min_support": 2, "radii": [1, 2]}
+    assert graph.filters == asdict(TransformFilters(min_support=2, radii=(1, 2)))
 
 
 def test_atomic_control_request_refreshes_once_and_publishes_accepted_state(
     monkeypatch,
 ):
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=100))
+    graph = TransformGraph(dataset, max_nodes=100)
     original_refresh = graph._refresh
     refreshes = []
     published = []
@@ -384,20 +416,20 @@ def test_atomic_control_request_refreshes_once_and_publishes_accepted_state(
         "revision": 1,
         "property_name": "pIC50",
         "direction": "higher",
-        "filters": {"direction": "gain", "min_support": 2},
+        "filters": {"effect": "gain", "min_support": 2},
         "max_nodes": 12,
     }
 
     assert len(refreshes) == 1
     assert graph._control_response == {"revision": 1, "ok": True, "error": None}
     assert graph.property_name == "pIC50"
-    assert graph.state.filters == TransformFilters(direction="gain", min_support=2)
+    assert graph.state.filters == TransformFilters(effect="gain", min_support=2)
     assert graph.max_nodes == 12
     assert published == [("pIC50", graph.filters, 12)]
 
 
 def test_invalid_and_stale_control_requests_preserve_accepted_state():
-    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS).view(max_nodes=10))
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=10)
     accepted = graph.state
     requests = [
         {
@@ -452,7 +484,7 @@ def test_invalid_and_stale_control_requests_preserve_accepted_state():
 
 
 def test_malformed_control_request_is_rejected_without_refresh(monkeypatch):
-    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS).view(max_nodes=10))
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=10)
     refreshes = []
     monkeypatch.setattr(graph, "_refresh", lambda **kwargs: refreshes.append(kwargs))
     graph._control_request = {"revision": 1, "property_name": "pIC50"}
@@ -464,17 +496,17 @@ def test_malformed_control_request_is_rejected_without_refresh(monkeypatch):
 
 def test_selection_persists_only_while_visible():
     dataset = TransformDataset.from_tsv(TRANSFORMS)
-    graph = TransformGraph(dataset.view(max_nodes=20))
+    graph = TransformGraph(dataset, max_nodes=20)
     chosen = graph.data["products"][5]["id"]
     graph.selected_id = chosen
-    graph.update(dataset.view(max_nodes=10))
+    graph.update(dataset, max_nodes=10)
     expected = (
         chosen
         if chosen in {item["id"] for item in graph.data["products"]}
         else graph.data["products"][0]["id"]
     )
     assert graph.state.selected_id == expected
-    graph.update(dataset.view(filters={"text": "does-not-exist"}))
+    graph.update(dataset, filters={"text": "does-not-exist"})
     assert graph.state.selected_id is None
     assert graph.state.selected_compound is None
     assert graph.state.selected_stats is None
@@ -483,8 +515,9 @@ def test_selection_persists_only_while_visible():
 
 
 def test_transform_graph_uses_standard_reactive_marimo_wrapper():
-    view = TransformDataset.from_tsv(TRANSFORMS).view(max_nodes=5)
-    raw_graph = TransformGraph(view, height=760)
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    view = dataset.view(max_nodes=5)
+    raw_graph = TransformGraph(dataset, max_nodes=5, height=760)
     graph = mo.ui.anywidget(raw_graph)
 
     assert isinstance(graph, mo.ui.anywidget)
@@ -518,12 +551,12 @@ def test_transform_graph_uses_standard_reactive_marimo_wrapper():
     assert state.filters == TransformFilters()
     assert state.max_nodes == 5
     assert state.height == 760
-    assert state.shown_compounds == view.records
+    assert state.records == view.records
     assert state.shown_count == 5
-    assert state.matching_count == view.total_matching
+    assert state.matching_count == view.matching_count
     assert state.truncated == view.truncated
     assert state.selected_compound == view.records[0]
-    assert state.selected_stats == view.records[0].properties[view.property]
+    assert state.selected_stats == view.records[0].properties[view.property_name]
     assert state.rows() == view.rows()
     assert state.source_pairs() == ()
     with pytest.raises(FrozenInstanceError):
@@ -536,7 +569,7 @@ def test_transform_graph_uses_standard_reactive_marimo_wrapper():
     assert graph.state.selected_id == selected_id
     assert graph.state.selected_compound.id == selected_id
 
-    graph.filters = {"min_support": 2, "direction": "all"}
+    graph.filters = {"min_support": 2, "effect": "all"}
     refreshed = graph.state
     assert refreshed.filters.min_support == 2
     assert refreshed.shown_count == 5
@@ -571,19 +604,155 @@ def test_transform_graph_uses_standard_reactive_marimo_wrapper():
     assert clone.widget._control_response == {"revision": 0, "ok": True, "error": None}
 
 
-def test_transform_graph_requires_transform_view():
-    with pytest.raises(TypeError, match="expects a TransformView from dataset.view"):
-        TransformGraph(cast(TransformView, object()))
+def test_graph_state_properties_cannot_mutate_the_snapshot_or_dataset():
+    dataset = TransformDataset.from_tsv(TRANSFORMS)
+    graph = TransformGraph(dataset, max_nodes=1)
+    snapshot = graph.state
+    stats = snapshot.selected_stats
+    assert stats is not None
+    record = snapshot.records[0]
+    properties = cast(MutableMapping[str, PropertyStats], record.properties)
+    rows = snapshot.rows()
+    with pytest.raises(TypeError):
+        properties[snapshot.property_name] = replace(stats, median=999)
+    with pytest.raises(TypeError):
+        del properties[snapshot.property_name]
+    assert snapshot.selected_stats == stats
+    dataset_record = next(item for item in dataset.records if item.id == record.id)
+    assert dataset_record.properties[snapshot.property_name] == stats
+    assert snapshot.rows() == rows
+    assert graph.data["products"][0]["median"] == stats.median
+    assert deepcopy(graph).state == snapshot
+
+
+def test_graph_state_constructor_hides_private_dataset():
+    from marimo_mmp.widget import TransformGraphState
+
+    parameters = inspect.signature(TransformGraphState).parameters
+    assert not any(name.startswith("_") for name in parameters)
+    state = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=1).state
+    assert "_dataset" not in repr(state)
+    assert not state.has_mmpdb
+
+
+def test_graph_state_is_hashable_and_matches_equal_snapshots():
+    graph = TransformGraph(TransformDataset.from_tsv(TRANSFORMS), max_nodes=5)
+    state = graph.state
+    assert hash(state) == hash(graph.state)
+    assert hash(deepcopy(graph).state) == hash(state)
+    converted = asdict(state)
+    assert converted["property_name"] == state.property_name
+    assert len(converted["records"]) == state.shown_count
+
+
+def test_transform_graph_requires_transform_dataset():
+    with pytest.raises(TypeError, match="expects a TransformDataset"):
+        TransformGraph(cast(TransformDataset, object()))
+
+
+@pytest.fixture
+def multi_property_dataset():
+    frame = pd.DataFrame({"ID": ["1", "2", "3"], "SMILES": ["CCN", "CCC", "CCF"]})
+    for property, medians in (("activity", [3, 2, 1]), ("logD", [-2, -1, 0.5])):
+        for suffix, values in {
+            "from_smiles": ["[*:1]O"] * 3,
+            "to_smiles": ["[*:1]N", "[*:1]C", "[*:1]F"],
+            "radius": [0] * 3,
+            "rule_environment_id": [1, 2, 3],
+            "count": [4, 3, 5],
+            "median": medians,
+        }.items():
+            frame[f"{property}_{suffix}"] = values
+    return TransformDataset.from_df(frame, original_smiles="CCO")
+
+
+@pytest.mark.parametrize("typed_filters", [False, True])
+def test_constructor_selects_property_filters_limit_and_orientation(
+    multi_property_dataset, typed_filters
+):
+    filters = (
+        TransformFilters(effect="gain", min_support=2)
+        if typed_filters
+        else {"effect": "gain", "min_support": 2}
+    )
+    graph = TransformGraph(
+        multi_property_dataset,
+        property_name="logD",
+        filters=filters,
+        max_nodes=1,
+        direction="lower",
+    )
+    state = graph.state
+    assert state.available_properties == ("activity", "logD")
+    assert state.property_name == "logD"
+    assert state.direction == "lower"
+    assert state.filters == TransformFilters(effect="gain", min_support=2)
+    assert state.max_nodes == 1
+    assert state.matching_count == 2
+    assert [record.id for record in state.records] == ["1"]
+    stats = state.selected_stats
+    assert stats is not None
+    assert stats.median == -2
+    assert graph.data["fromGroups"][0]["gainCount"] == 1
+    assert deepcopy(graph).state == state
+
+
+def test_update_accepts_dataset_and_options_and_retains_direction(
+    multi_property_dataset,
+):
+    graph = TransformGraph(multi_property_dataset, max_nodes=1, height=760)
+    graph.selected_id = "3"
+    graph.update(
+        multi_property_dataset,
+        property_name="logD",
+        filters={"effect": "gain"},
+        max_nodes=2,
+        direction="lower",
+    )
+    assert graph.state.property_name == "logD"
+    assert graph.state.direction == "lower"
+    assert [record.id for record in graph.state.records] == ["1", "2"]
+    assert graph.state.selected_id == "1"
+    graph.update(multi_property_dataset)
+    assert graph.state.property_name == "activity"
+    assert graph.state.filters == TransformFilters()
+    assert graph.state.max_nodes == 100
+    assert graph.state.direction == "lower"
+    assert graph.state.height == 760
+    assert graph.state.selected_id == "1"
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"property_name": "missing"},
+        {"max_nodes": 0},
+        {"direction": "up"},
+        {"filters": {"effect": "up"}},
+    ],
+)
+def test_invalid_update_options_preserve_dataset_and_state(
+    multi_property_dataset, options
+):
+    original = TransformDataset.from_tsv(TRANSFORMS)
+    graph = TransformGraph(original, max_nodes=5)
+    state = graph.state
+    depictions = dict(graph.depictions)
+    with pytest.raises((KeyError, ValueError)):
+        graph.update(multi_property_dataset, **options)
+    assert graph._dataset is original
+    assert graph.state == state
+    assert graph.depictions == depictions
 
 
 def test_graph_state_queries_source_pairs_after_database_cleanup(tmp_path):
     database = tmp_path / "uploaded.mmpdb"
     database.write_bytes(MMPDB.read_bytes())
-    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb=database)
+    dataset = TransformDataset.from_tsv(TRANSFORMS, mmpdb_path=database)
     database.unlink()
-    state = TransformGraph(dataset.view(max_nodes=5)).state
+    state = TransformGraph(dataset, max_nodes=5).state
 
-    assert state.has_mmpdb()
+    assert state.has_mmpdb
     assert state.selected_id is not None
     assert state.source_pairs() == dataset.source_pairs(
         state.selected_id, state.property_name
@@ -616,3 +785,28 @@ def test_rdkit_svg_is_sanitized_and_change_highlighted():
         "#e08f1f" not in svg
     )  # RDKit serializes the explicit highlight color, not raw CSS.
     assert "atom-2" in svg
+
+
+def test_state_has_mmpdb_property_records_and_compact_repr():
+    dataset = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
+    graph = TransformGraph(dataset, property_name="pIC50")
+    state = graph.state
+    assert state.has_mmpdb is False
+    assert state.records == tuple(state.records)
+    assert len(repr(state)) < 300
+    assert "selected_id=" in repr(state)
+    with pytest.raises((AttributeError, TypeError)):
+        state.has_mmpdb = True  # ty: ignore[invalid-assignment]
+    with pytest.raises(TypeError):
+        TransformGraph(dataset, **cast(Any, {"property": "pIC50"}))
+    with pytest.raises(TypeError):
+        graph.update(dataset, **cast(Any, {"property": "pIC50"}))
+    with pytest.raises(ValueError, match="effect"):
+        TransformGraph(dataset, filters={"effect": "up"})
+
+
+def test_loading_and_depicting_emits_no_rdkit_stderr(capfd):
+    molecule_svg.cache_clear()
+    dataset = TransformDataset.from_tsv(TRANSFORMS, original_smiles=ORIGINAL)
+    TransformGraph(dataset, highlight_changes=True)
+    assert "not removing hydrogen" not in capfd.readouterr().err

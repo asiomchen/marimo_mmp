@@ -5,16 +5,16 @@
 Python anywidget package (`marimo-mmp`) visualizing mmpdb matched-molecular-pair transforms, with a TypeScript frontend bundled by esbuild. Core package does not depend on marimo; notebooks use the `notebook` extra.
 
 - `src/marimo_mmp/` — Python package (`dataset.py`, `widget.py`, `depiction.py`)
-- `frontend/` — strict TypeScript + CSS sources; single widget module `transform_graph.ts`
+- `frontend/` — strict TypeScript + CSS sources; esbuild entry `transform_graph.ts` imports modules from `frontend/transform_graph/`
 - `notebooks/` — marimo notebooks; run with `uv run marimo edit notebooks/<name>.py`
-- `scripts/h1_pipeline.py` — builds `data/processed/h1_ic50.mmpdb` from the ChEMBL web API (network, slow)
-- `WIDGET_ARCHITECTURE.md`, `NOTES.md` — architecture reference and data-pipeline methodology
+- `scripts/` — package build and distribution verification tools
+- `WIDGET_ARCHITECTURE.md` — architecture reference; `README.md` documents example-data provenance
 
 ## Commands
 
 Python (uv, 3.11): `uv sync --group dev`, then `uv run ty check`, `uv run pytest`.
 
-JS/TS (Node >= 20): `npm ci` first, then `npm run check` (tsc --noEmit + JS tests).
+JS/TS (Node >= 22; CI uses 24): `npm ci` first, then `npm run check` (tsc --noEmit + JS tests).
 
 Single test:
 
@@ -38,7 +38,7 @@ Notebook checks: `uv run marimo check --strict notebooks/*.py`.
 
 ## Style and conventions
 
-- Ruff runs via pre-commit (`ruff-check --fix`, `ruff-format`) with rules `E4,E7,E9,F,B`.
+- Ruff runs via pre-commit (`ruff-check --fix`, `ruff-format`)
 - Notebooks have per-file ignores `F841`, `B018` (marimo cell idiom) — do not "fix" those in `notebooks/*.py`.
 - `ty` type-checks `src`, `tests`, and `scripts` — keep scripts type-clean.
 - Published widget uses minified local assets only; no CDN or runtime npm dependency.

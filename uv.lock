@@ -745,9 +745,9 @@ name = "marimo-mmp"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },
-    { name = "mmpdb" },
     { name = "pandas" },
     { name = "rdkit" },
+    { name = "traitlets" },
 ]
 
 [package.optional-dependencies]
@@ -759,6 +759,7 @@ notebook = [
 dev = [
     { name = "hatch" },
     { name = "marimo" },
+    { name = "mmpdb" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "ty" },
@@ -766,11 +767,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anywidget", specifier = ">=0.9.18" },
+    { name = "anywidget", specifier = ">=0.9" },
     { name = "marimo", marker = "extra == 'notebook'", specifier = ">=0.24.0" },
-    { name = "mmpdb", specifier = ">=3.1.4" },
-    { name = "pandas", specifier = ">=3.0.6" },
-    { name = "rdkit", specifier = ">=2026.3.5" },
+    { name = "pandas", specifier = ">=2.2.2" },
+    { name = "rdkit", specifier = ">=2024.9.1" },
+    { name = "traitlets", specifier = ">=5" },
 ]
 provides-extras = ["notebook"]
 
@@ -778,6 +779,7 @@ provides-extras = ["notebook"]
 dev = [
     { name = "hatch", specifier = ">=1.18" },
     { name = "marimo", specifier = ">=0.24.0" },
+    { name = "mmpdb", specifier = ">=3.1.4" },
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "ruff", specifier = "==0.16.1" },
     { name = "ty", specifier = ">=0.0.75" },

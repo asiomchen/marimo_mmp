@@ -10,7 +10,7 @@
 
 `TransformGraph` converts matched-molecular-pair results into an interactive graph. Python validates data, filters records, and generates molecular depictions. An Anywidget Front-End Module (AFM) renders the graph and sends interaction state back to Python. Notebooks use `mo.ui.anywidget()` to make those interactions inputs to marimo’s reactive cell graph; the package itself does not depend on marimo.
 
-This reference describes the implementation in this repository. For design comparisons with other widgets, see [Anywidget architecture comparisons](ANYWIDGET_ARCHITECTURE_COMPARISON.md).
+This reference describes the implementation in this repository.
 
 ## Ownership and source files
 
@@ -20,7 +20,7 @@ The dataset, synchronized widget model, and browser view have different lifetime
 flowchart LR
     T[Transform table] --> A[TransformDataset]
     DB[Optional MMPDB] -->|load relevant source pairs| A
-    A --> B[TransformView]
+    A -->|TransformGraph dataset and options| B[Internal TransformView]
     B --> C[_payload]
     C --> D[TransformGraph traits]
     D <--> H[Anywidget host]
@@ -35,10 +35,14 @@ The implementation is divided across these files:
 
 | File | Responsibility |
 |---|---|
-| [dataset.py](src/marimo_mmp/dataset.py) | Transform validation, filtering, ranking, and in-memory source-pair provenance |
+| [dataset.py](src/marimo_mmp/dataset.py) | `TransformDataset` loaders and validation, `TransformView` filtering, ranking, and source-pair lookup |
+| [models.py](src/marimo_mmp/models.py) | Immutable records, statistics, evidence tiers and thresholds, filters, and source pairs |
+| [parsing.py](src/marimo_mmp/parsing.py) | TSV/CSV/gzip decoding, column discovery, and row and statistic validation |
+| [provenance.py](src/marimo_mmp/provenance.py) | Read-only MMPDB checks and in-memory source-pair loading |
 | [widget.py](src/marimo_mmp/widget.py) | Payload construction, synchronized traits, atomic controls, typed state, and copies |
 | [depiction.py](src/marimo_mmp/depiction.py) | Cached RDKit SVG drawing, optional changed-atom matching, and SVG sanitization |
-| [transform_graph.ts](frontend/transform_graph.ts) | AFM lifecycle, controls, radial layout, selection, tooltips, and host sizing |
+| [transform_graph.ts](frontend/transform_graph.ts) | Bundle entry: AFM lifecycle, model listeners, and view cleanup |
+| [transform_graph/](frontend/transform_graph/) | `types`, `controls` (control sync and rail), `shell`, `graph` (radial rendering), `layout`, `tooltips`, `selection` (roving focus), `viewport` (host sizing and drag-pan), `dom`, `encoding`, `depiction` |
 | [transform_graph.css](frontend/transform_graph.css) | Theme tokens, responsive layout, focus states, and reduced motion |
 | [transform_explorer.py](notebooks/transform_explorer.py) | Upload handling and reactive graph, provenance, table, and export cells |
 | [hatch_build.py](scripts/hatch_build.py) | Build missing frontend assets before packaging |
@@ -55,7 +59,7 @@ An optional MMPDB adds experimental provenance. During loading, the dataset:
 4. Shares pair tuples when records use the same oriented rule environment and property
 5. Closes the SQLite connection before returning
 
-The dataset stores those pairs in memory. `source_pairs()` performs no later database reads, so an uploaded temporary database can be deleted immediately after loading. `dataset.mmpdb_path` retains the original path as provenance metadata; it does not guarantee that a file still exists there. The graph’s `hasMmpdb` flag and `state.has_mmpdb()` indicate that an MMPDB was loaded; a particular selection can still have no source pairs.
+The dataset stores those pairs in memory. `source_pairs()` performs no later database reads, so an uploaded temporary database can be deleted immediately after loading. `dataset.mmpdb_path` retains the original path as provenance metadata; it does not guarantee that a file still exists there. The graph’s `hasMmpdb` flag and `state.has_mmpdb` indicate that an MMPDB was loaded; a particular selection can still have no source pairs.
 
 By default, `source_pairs()` omits pairs missing either compound’s selected-property value. `include_missing=True` returns all stored structural pairs. The dataset, `TransformView`, and `TransformGraphState` expose this behavior at their respective record or selection boundaries.
 
@@ -63,7 +67,7 @@ The explorer writes uploaded bytes into a temporary `.mmpdb` file inside an `Exi
 
 ## Python model and public state
 
-`TransformGraph` accepts a prepared `TransformView`. Its constructor builds a browser-safe payload and initializes ten synchronized traits.
+`TransformGraph` accepts a `TransformDataset` with optional `property_name`, `filters`, `max_nodes`, and `direction` arguments. It prepares a `TransformView` internally, builds a browser-safe payload, and initializes ten synchronized traits. The same direction controls both initial filtering and gain/loss coloring. `update(dataset, ...)` validates new options before replacing the current dataset, retains a still-visible selection, and preserves direction unless explicitly supplied. Omitted property, filters, and product limit use the constructor defaults. `dataset.view(...)` remains available for data-only queries.
 
 ### Payload and graph levels
 
@@ -105,13 +109,15 @@ Traits tagged with `sync=True` form the transport contract. Direction describes 
 
 Python observes changes to `property_name`, `direction`, `filters`, and `max_nodes` and rebuilds the view. `_suspend_refresh` prevents redundant observer calls when construction, `update()`, or an accepted browser request changes several controls together.
 
-`_refresh()` preserves the selected product if it remains visible. Otherwise, it selects the first visible record, or `None` for an empty view. Filtering retains previously encountered depictions and adds new ones. `update(view)` resets the depiction dictionary when the dataset object changes, then publishes the new assets and data together.
+`_refresh()` preserves the selected product if it remains visible. Otherwise, it selects the first visible record, or `None` for an empty view. Filtering retains previously encountered depictions and adds new ones. `update(dataset, ...)` resets the depiction dictionary when the dataset object changes, then publishes the new assets and data together.
 
 Direct Python assignments can trigger separate refreshes. Browser gestures use the atomic request/response path described below. Selection-only changes update `selected_id` without rebuilding the graph payload.
 
 ### Typed state and copying
 
-`graph.state` returns an immutable `TransformGraphState` snapshot derived from synchronized traits. It resolves payload product IDs to typed records and exposes selection, property statistics, filters, counts, warnings, rows, and in-memory source pairs. `shown_compounds` follows payload order; radial positions are a separate browser calculation.
+`graph.state` returns an immutable `TransformGraphState` snapshot derived from synchronized traits. It resolves payload product IDs to typed records and exposes selection, property statistics, filters, counts, warnings, rows, and in-memory source pairs. `records` follows payload order; radial positions are a separate browser calculation.
+
+Record property mappings copy their constructor input and expose it read-only. Deep copies rebuild these mappings so dataset and widget copies preserve immutability.
 
 Raw widget copies clone the dataset and construct a new widget with independent transport state. They preserve public state and the highlighting setting while resetting control revisions and the private handshake. The marimo wrapper’s deep-copy path uses this widget implementation.
 
@@ -126,7 +132,7 @@ Changed-atom highlights require a reference structure and `highlight_changes=Tru
 Enable highlights explicitly when you need them:
 
 ```python
-raw_graph = TransformGraph(view, highlight_changes=True)
+raw_graph = TransformGraph(dataset, highlight_changes=True)
 ```
 
 With highlighting off, the query structure remains visible and product drawing skips MCS matching. Changing query SMILES, clearing or evicting cache entries, reloading the depiction module, or restarting the kernel can require fresh depictions.
@@ -144,7 +150,7 @@ for highlight in (False, True):
     for run in ("cold", "warm"):
         start = perf_counter()
         graph = TransformGraph(
-            dataset.view(max_nodes=100), highlight_changes=highlight
+            dataset, max_nodes=100, highlight_changes=highlight
         )
         print(highlight, run, perf_counter() - start)
 ```
@@ -174,7 +180,7 @@ dataset = TransformDataset.from_tsv(
     ),
 )
 for limit in (5, 25, 100):
-    graph = TransformGraph(dataset.view(max_nodes=limit))
+    graph = TransformGraph(dataset, max_nodes=limit)
     sizes = [
         len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
         for value in (graph.data, graph.depictions)
@@ -235,7 +241,7 @@ Connections encode favorable or unfavorable changes relative to `direction`: gre
 
 One tooltip serves query, fragment, rule, and product nodes. It sits outside the scrolling stage, clamps its position to the visual viewport, and uses a compact layout when available width is below roughly 520 px. Keyboard focus supplies node bounds when there is no pointer event.
 
-Product nodes use `role="button"`; informational nodes use `role="img"`. Nodes have accessible names, focus styling, and tooltip descriptions. Enter and Space select a product; arrow keys move focus through product DOM order; Escape dismisses the tooltip. The status region uses `aria-live="polite"`, and CSS respects reduced-motion preferences. Remaining accessibility gaps and test coverage are listed below.
+Product nodes use `role="button"` with `aria-pressed` reflecting the selected product. They form one roving-tabindex group: exactly one product holds `tabindex="0"` (the previously roving product if it still exists after a render, else the selected product, else the first), so the graph is a single Tab stop. Arrow keys move clockwise (Right/Down) or counter-clockwise (Left/Up) in on-screen order, derived from the layout angles starting at 12 o'clock, and wrap; Home and End jump to the first and last product. Enter and Space select a product; Escape dismisses the tooltip. Query, fragment, and rule nodes are informational: `role="img"` with a full `aria-label`, not focusable, with tooltips on pointer hover only. The status region uses `aria-live="polite"`, and CSS respects reduced-motion preferences. Depictions sit on a light backing and product plates turn light under `.dark`, `[data-theme="dark"]`, or `prefers-color-scheme: dark`. Remaining accessibility gaps and test coverage are listed below.
 
 ## marimo integration and host sizing
 
@@ -247,7 +253,7 @@ Construct and display the UI element in one cell:
 import marimo as mo
 from marimo_mmp import TransformGraph
 
-graph = mo.ui.anywidget(TransformGraph(dataset.view(max_nodes=100)))
+graph = mo.ui.anywidget(TransformGraph(dataset, max_nodes=100))
 graph
 ```
 
@@ -295,7 +301,7 @@ Run the full verification sequence documented in [AGENTS.md](AGENTS.md). JS test
 The remaining implementation and coverage limits are:
 
 - **Sizing:** Replace the [private host override](#host-specific-height-override) when a suitable sizing API exists, or cover it in real marimo integration tests.
-- **Accessibility:** Each graph node remains a tab stop, selection lacks a pressed or selected ARIA state, and rerendering rebuilds node DOM. Consider roving focus, focus retention, and spatial arrow navigation; preserve the [existing keyboard and live-region behavior](#visual-encoding-tooltips-and-keyboard-behavior).
+- **Accessibility:** Rerendering rebuilds node DOM (roving position and focus are restored by product id), and rule, fragment, and query tooltips are not reachable by keyboard. Preserve the [existing keyboard and live-region behavior](#visual-encoding-tooltips-and-keyboard-behavior).
 - **Browser verification:** Keyboard activation and navigation, tooltip placement at every viewport edge, light/dark themes, and actual responsive layout need real-browser coverage.
 - **Host integration:** Test downstream cell reactivity, synchronized multiple views, unmount, hot reload, and height restoration in a real marimo page.
 - **Performance:** Highlight matching can dominate a cold render. Eager provenance and cumulative SVG assets consume memory; measure both before increasing dataset or graph limits.

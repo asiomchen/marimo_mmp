@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from importlib.resources import files
@@ -12,21 +13,20 @@ from typing import Any
 import anywidget
 import traitlets
 
-from .dataset import (
+from .dataset import TransformDataset, TransformView
+from .depiction import molecule_svg
+from .models import (
     EvidenceThresholds,
     PropertyStats,
     SourcePair,
-    TransformDataset,
     TransformFilters,
     TransformRecord,
-    TransformView,
 )
-from .depiction import molecule_svg
 
 DEFAULT_GRAPH_HEIGHT = 1220
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class TransformGraphState:
     """Immutable Python snapshot of the graph's current interactive state."""
 
@@ -38,16 +38,30 @@ class TransformGraphState:
     max_nodes: int
     height: int
     selected_id: str | None
-    shown_compounds: tuple[TransformRecord, ...]
+    records: tuple[TransformRecord, ...]
     matching_count: int
     query_smiles: str | None
     warnings: tuple[str, ...]
-    _has_mmpdb: bool = field(repr=False)
-    _dataset: TransformDataset = field(repr=False, compare=False)
+    _dataset: TransformDataset = field(init=False, repr=False, compare=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"TransformGraphState(property_name={self.property_name!r}, "
+            f"direction={self.direction!r}, "
+            f"records={self.shown_count}/{self.matching_count}, "
+            f"max_nodes={self.max_nodes}, selected_id={self.selected_id!r}, "
+            f"filters={self.filters!r})"
+        )
+
+    @classmethod
+    def _create(cls, dataset: TransformDataset, **fields: Any) -> TransformGraphState:
+        state = cls(**fields)
+        object.__setattr__(state, "_dataset", dataset)
+        return state
 
     @property
     def shown_count(self) -> int:
-        return len(self.shown_compounds)
+        return len(self.records)
 
     @property
     def truncated(self) -> bool:
@@ -66,21 +80,20 @@ class TransformGraphState:
 
     def record(self, record_id: str) -> TransformRecord | None:
         target = str(record_id)
-        return next(
-            (record for record in self.shown_compounds if record.id == target), None
-        )
+        return next((record for record in self.records if record.id == target), None)
 
+    @property
     def has_mmpdb(self) -> bool:
-        """Return whether source-pair provenance was loaded from an MMPDB."""
-        return self._has_mmpdb
+        """Whether source-pair provenance was loaded from an MMPDB."""
+        return self._dataset.has_mmpdb
 
     def rows(self) -> list[dict[str, Any]]:
         """Return table-ready rows for the shown compounds."""
         return TransformView(
             dataset=self._dataset,
-            property=self.property_name,
-            records=self.shown_compounds,
-            total_matching=self.matching_count,
+            property_name=self.property_name,
+            records=self.records,
+            matching_count=self.matching_count,
             max_nodes=self.max_nodes,
             filters=self.filters,
         ).rows()
@@ -99,7 +112,7 @@ class TransformGraphState:
             return ()
         if self.record(target) is None:
             raise KeyError(f"transform ID {target!r} is not among the shown compounds")
-        if not self.has_mmpdb():
+        if not self.has_mmpdb:
             return ()
         return self._dataset.source_pairs(
             target, self.property_name, include_missing=include_missing
@@ -126,7 +139,7 @@ def _payload(
     from_groups: dict[str, dict[str, Any]] = {}
     groups: dict[str, dict[str, Any]] = {}
     for record in view.records:
-        stats = record.properties[view.property]
+        stats = record.properties[view.property_name]
         from_group_id = f"from:{stats.from_smiles}"
         group_id = (
             f"rule:{stats.rule_environment_id}:{stats.from_smiles}>{stats.to_smiles}"
@@ -230,24 +243,24 @@ def _payload(
         "controlOptions": {
             "radii": sorted(
                 {
-                    record.properties[view.property].radius
+                    record.properties[view.property_name].radius
                     for record in view.dataset.records
-                    if view.property in record.properties
+                    if view.property_name in record.properties
                 }
             ),
             "maxSupport": max(
                 (
-                    record.properties[view.property].count
+                    record.properties[view.property_name].count
                     for record in view.dataset.records
-                    if view.property in record.properties
+                    if view.property_name in record.properties
                 ),
                 default=1,
             ),
             "maxEffect": max(
                 (
-                    abs(record.properties[view.property].median)
+                    abs(record.properties[view.property_name].median)
                     for record in view.dataset.records
-                    if view.property in record.properties
+                    if view.property_name in record.properties
                 ),
                 default=1.0,
             ),
@@ -262,15 +275,15 @@ def _payload(
         "fromGroups": list(from_groups.values()),
         "groups": list(groups.values()),
         "shown": len(products),
-        "matching": view.total_matching,
+        "matching": view.matching_count,
         "truncated": view.truncated,
         "warnings": list(view.dataset.warnings),
-        "hasMmpdb": view.dataset.mmpdb_path is not None,
+        "hasMmpdb": view.dataset.has_mmpdb,
     }, depictions
 
 
 class TransformGraph(anywidget.AnyWidget):
-    """Render a prepared matched-molecular-pair view as an interactive graph.
+    """Render a matched-molecular-pair dataset as an interactive graph.
 
     Python owns filtering, aggregation, molecule depiction, and conversion to
     browser-safe state. The packaged Anywidget frontend owns layout and user
@@ -278,9 +291,14 @@ class TransformGraph(anywidget.AnyWidget):
 
     Parameters
     ----------
-    view : TransformView
-        Prepared dataset view that determines the property, filters, products,
-        and maximum number of visible nodes.
+    dataset : TransformDataset
+        Loaded transform records and optional source-pair provenance.
+    property_name : str or None, default=None
+        Property to display. Defaults to the dataset's first property.
+    filters : TransformFilters or mapping or None, default=None
+        Initial product filters. Defaults to all products.
+    max_nodes : int, default=100
+        Maximum number of visible products after filtering and ranking.
     height : int, default=DEFAULT_GRAPH_HEIGHT
         Maximum graph-stage height in pixels. The rendered stage also caps
         itself to the browser viewport. Values below 480 are rejected by the
@@ -323,21 +341,35 @@ class TransformGraph(anywidget.AnyWidget):
 
     def __init__(
         self,
-        view: TransformView,
+        dataset: TransformDataset,
         *,
+        property_name: str | None = None,
+        filters: TransformFilters | Mapping[str, Any] | None = None,
+        max_nodes: int = 100,
         height: int = DEFAULT_GRAPH_HEIGHT,
         direction: str = "higher",
         highlight_changes: bool = False,
         **kwargs: Any,
     ) -> None:
-        if not isinstance(view, TransformView):
-            raise TypeError(
-                "TransformGraph expects a TransformView from dataset.view()"
-            )
+        if not isinstance(dataset, TransformDataset):
+            raise TypeError("TransformGraph expects a TransformDataset")
         if not isinstance(highlight_changes, bool):
             raise TypeError("highlight_changes must be a boolean")
+        unknown = sorted(set(kwargs) - set(type(self).class_trait_names()))
+        if unknown:
+            raise TypeError(
+                f"TransformGraph got unexpected keyword arguments: {', '.join(unknown)}"
+            )
+        if direction not in ("higher", "lower"):
+            raise ValueError("direction must be higher or lower")
+        view = dataset.view(
+            property_name=property_name,
+            filters=filters,
+            max_nodes=max_nodes,
+            direction=direction,
+        )
         self._highlight_changes = highlight_changes
-        self._dataset = view.dataset
+        self._dataset = dataset
         self._suspend_refresh = True
         self._control_revision = 0
         initial = view.records[0].id if view.records else None
@@ -348,7 +380,7 @@ class TransformGraph(anywidget.AnyWidget):
             data=data,
             depictions=depictions,
             selected_id=initial,
-            property_name=view.property,
+            property_name=view.property_name,
             direction=direction,
             filters=asdict(view.filters),
             max_nodes=view.max_nodes,
@@ -363,6 +395,35 @@ class TransformGraph(anywidget.AnyWidget):
     def highlight_changes(self) -> bool:
         """Whether product depictions highlight differences from the query."""
         return self._highlight_changes
+
+    @traitlets.validate("property_name", "filters", "max_nodes")
+    def _validate_control(self, proposal: dict[str, Any]) -> Any:
+        """Reject invalid direct assignments before traitlets stores them."""
+        if getattr(self, "_suspend_refresh", False):
+            # Constructor, update(), and control requests validate the full view.
+            return proposal["value"]
+        name = proposal["trait"].name
+        controls = {
+            "property_name": self.property_name,
+            "filters": self.filters,
+            "max_nodes": self.max_nodes,
+            name: proposal["value"],
+        }
+        max_nodes = controls["max_nodes"]
+        if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
+            raise TypeError("max_nodes must be an integer")
+        view = self._dataset.view(
+            property_name=controls["property_name"],
+            filters=controls["filters"],
+            max_nodes=max_nodes,
+            direction=self.direction,
+        )
+        normalized = {
+            "property_name": view.property_name,
+            "filters": asdict(view.filters),
+            "max_nodes": view.max_nodes,
+        }
+        return normalized[name]
 
     @traitlets.observe("property_name", "filters", "max_nodes", "direction")
     def _controls_changed(self, change: dict[str, Any]) -> None:
@@ -416,7 +477,7 @@ class TransformGraph(anywidget.AnyWidget):
             if isinstance(max_nodes, bool) or not isinstance(max_nodes, int):
                 raise TypeError("max_nodes must be an integer")
             view = self._dataset.view(
-                property=property_name,
+                property_name=property_name,
                 filters=filters,
                 max_nodes=max_nodes,
                 direction=direction,
@@ -432,7 +493,7 @@ class TransformGraph(anywidget.AnyWidget):
         self._suspend_refresh = True
         try:
             with self.hold_sync():
-                self.property_name = view.property
+                self.property_name = view.property_name
                 self.direction = direction
                 self.filters = asdict(view.filters)
                 self.max_nodes = view.max_nodes
@@ -452,7 +513,7 @@ class TransformGraph(anywidget.AnyWidget):
     ) -> None:
         if view is None:
             view = self._dataset.view(
-                property=self.property_name,
+                property_name=self.property_name,
                 filters=self.filters,
                 max_nodes=self.max_nodes,
                 direction=self.direction,
@@ -485,15 +546,14 @@ class TransformGraph(anywidget.AnyWidget):
         records_by_id = {record.id: record for record in self._dataset.records}
         product_ids = [str(product["id"]) for product in self.data.get("products", ())]
         try:
-            shown_compounds = tuple(
-                records_by_id[record_id] for record_id in product_ids
-            )
+            records = tuple(records_by_id[record_id] for record_id in product_ids)
         except KeyError as exc:
             raise RuntimeError(
                 f"graph payload references unknown transform ID {exc.args[0]!r}"
             ) from exc
         selected_id = self.selected_id if self.selected_id in product_ids else None
-        return TransformGraphState(
+        return TransformGraphState._create(
+            self._dataset,
             property_name=self.property_name,
             available_properties=tuple(
                 self.data.get("properties", self._dataset.properties)
@@ -504,38 +564,60 @@ class TransformGraph(anywidget.AnyWidget):
             max_nodes=self.max_nodes,
             height=self.height,
             selected_id=selected_id,
-            shown_compounds=shown_compounds,
-            matching_count=int(self.data.get("matching", len(shown_compounds))),
+            records=records,
+            matching_count=int(self.data.get("matching", len(records))),
             query_smiles=self.data.get("querySmiles"),
             warnings=tuple(self.data.get("warnings", ())),
-            _has_mmpdb=bool(self.data.get("hasMmpdb", False)),
-            _dataset=self._dataset,
         )
 
-    def update(self, view: TransformView) -> None:
-        """Replace the graph data while retaining a still-visible selection."""
-        dataset_changed = view.dataset is not self._dataset
-        self._dataset = view.dataset
+    def update(
+        self,
+        dataset: TransformDataset,
+        *,
+        property_name: str | None = None,
+        filters: TransformFilters | Mapping[str, Any] | None = None,
+        max_nodes: int = 100,
+        direction: str | None = None,
+    ) -> None:
+        """Replace graph data and filters, retaining a still-visible selection.
+
+        Property name, filters, and product limit use the constructor defaults when
+        omitted. Direction retains its current value unless supplied. Height
+        and changed-atom highlighting are retained. Invalid view options leave
+        the current dataset and state intact.
+        """
+        if not isinstance(dataset, TransformDataset):
+            raise TypeError("TransformGraph.update expects a TransformDataset")
+        selected_direction = self.direction if direction is None else direction
+        if selected_direction not in ("higher", "lower"):
+            raise ValueError("direction must be higher or lower")
+        view = dataset.view(
+            property_name=property_name,
+            filters=filters,
+            max_nodes=max_nodes,
+            direction=selected_direction,
+        )
+        dataset_changed = dataset is not self._dataset
         self._suspend_refresh = True
         try:
-            self.property_name = view.property
+            self._dataset = dataset
+            self.property_name = view.property_name
+            self.direction = selected_direction
             self.filters = asdict(view.filters)
             self.max_nodes = view.max_nodes
+            self._refresh(view=view, reset_depictions=dataset_changed)
         finally:
             self._suspend_refresh = False
-        self._refresh(reset_depictions=dataset_changed)
 
     def __deepcopy__(self, memo: dict[int, Any]) -> TransformGraph:
         """Copy the domain-aware widget without copying anywidget comm state."""
         state = self.state
         dataset = deepcopy(self._dataset, memo)
         clone = TransformGraph(
-            dataset.view(
-                property=state.property_name,
-                filters=state.filters,
-                max_nodes=state.max_nodes,
-                direction=state.direction,
-            ),
+            dataset,
+            property_name=state.property_name,
+            filters=state.filters,
+            max_nodes=state.max_nodes,
             height=state.height,
             direction=state.direction,
             highlight_changes=self.highlight_changes,

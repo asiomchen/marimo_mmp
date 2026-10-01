@@ -108,7 +108,7 @@ def _(
                 _database.write_bytes(mmpdb_input.value[0].contents)
 
             dataset = TransformDataset.from_tsv(
-                _source, original_smiles=_original, mmpdb=_database
+                _source, original_smiles=_original, mmpdb_path=_database
             )
         load_error = None
     except (OSError, ValueError, TypeError) as _exc:
@@ -137,7 +137,7 @@ def _(dataset, load_error, mo):
 @app.cell
 def _(TransformGraph, dataset, mo):
     graph = (
-        mo.ui.anywidget(TransformGraph(dataset.view(max_nodes=100), highlight_changes=False))
+        mo.ui.anywidget(TransformGraph(dataset, max_nodes=100, highlight_changes=False))
         if dataset is not None
         else None
     )
@@ -168,13 +168,13 @@ def _(mo):
     | `property_name` | `str` | Active matched-pair property, such as `pIC50`. |
     | `available_properties` | `tuple[str, ...]` | Property names available for exploration. |
     | `direction` | `str` | Property orientation: whether `higher` or `lower` deltas count as favorable (green) changes. |
-    | `filters` | `TransformFilters` | Typed direction, effect, support, radius, evidence, text, standard-deviation, and p-value filters. |
+    | `filters` | `TransformFilters` | Typed effect, support, radius, evidence, text, standard-deviation, and p-value filters. |
     | `max_nodes` | `int` | Maximum number of compounds rendered after filtering and ranking. |
     | `height` | `int` | Graph stage height in pixels. |
     | `selected_id` | `str \| None` | ID of the selected visible compound, or `None`. |
     | `selected_compound` | `TransformRecord \| None` | Selected compound record, derived from `selected_id`. |
     | `selected_stats` | `PropertyStats \| None` | Active-property statistics for the selected compound. |
-    | `shown_compounds` | `tuple[TransformRecord, ...]` | Visible compounds in the same order as the graph. |
+    | `records` | `tuple[TransformRecord, ...]` | Visible compounds in the same order as the graph. |
     | `shown_count` | `int` | Number of compounds currently visible. |
     | `matching_count` | `int` | Number matching the filters before `max_nodes` truncation. |
     | `truncated` | `bool` | Whether more compounds matched than are shown. |
@@ -185,7 +185,7 @@ def _(mo):
 
     | Method | Result |
     |---|---|
-    | `has_mmpdb()` | Returns whether source-pair provenance was loaded from an MMPDB. |
+    | `has_mmpdb` | Whether source-pair provenance was loaded from an MMPDB. |
     | `record(record_id)` | Returns a shown `TransformRecord`, or `None`. |
     | `rows()` | Returns table- and CSV-ready dictionaries for shown compounds. |
     | `source_pairs(record_id=None)` | Returns in-memory source pairs for a shown compound; defaults to the selected compound. |
@@ -194,8 +194,8 @@ def _(mo):
     state = graph.state
     state.selected_compound
     state.filters
-    state.shown_compounds
-    state.has_mmpdb()
+    state.records
+    state.has_mmpdb
     state.rows()
     ```
     """)
@@ -214,7 +214,7 @@ def _(graph_state, mo):
         _provenance_body = mo.callout(
             "Select a visible product to inspect its source pairs.", kind="info"
         )
-    elif not graph_state.has_mmpdb():
+    elif not graph_state.has_mmpdb:
         _provenance_body = mo.callout(
             "Upload an MMPDB file to inspect experimental source pairs.", kind="info"
         )

@@ -3,16 +3,48 @@ name = "marimo-mmp"
 dynamic = ["version"]
 description = "Reactive visualization of mmpdb transform results"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Anton Siomchen", email = "41703271+asiomchen@users.noreply.github.com" }
 ]
 requires-python = ">=3.11"
-dependencies = [
-    "anywidget>=0.9.18",
-    "mmpdb>=3.1.4",
-    "pandas>=3.0.6",
-    "rdkit>=2026.3.5",
+keywords = [
+    "anywidget",
+    "cheminformatics",
+    "marimo",
+    "matched molecular pairs",
+    "medicinal chemistry",
+    "mmpdb",
+    "rdkit",
+    "visualization",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Typing :: Typed",
+]
+dependencies = [
+    "anywidget>=0.9",
+    "pandas>=2.2.2",
+    "rdkit>=2024.9.1",
+    "traitlets>=5",
+]
+
+[project.urls]
+Homepage = "https://github.com/asiomchen/marimo_mmp"
+Repository = "https://github.com/asiomchen/marimo_mmp"
+Issues = "https://github.com/asiomchen/marimo_mmp/issues"
+Documentation = "https://github.com/asiomchen/marimo_mmp/blob/main/README.md"
 
 [project.optional-dependencies]
 notebook = [
@@ -23,6 +55,7 @@ notebook = [
 dev = [
     "hatch>=1.18",
     "marimo>=0.24.0",
+    "mmpdb>=3.1.4",
     "pytest>=8.4.0",
     "ruff==0.16.1",
     "ty>=0.0.75",
@@ -60,8 +93,7 @@ packages = ["src/marimo_mmp"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "frontend/transform_graph.ts",
-    "frontend/transform_graph.css",
+    "frontend",
     "scripts/hatch_build.py",
     "src/marimo_mmp",
     "package.json",
@@ -69,4 +101,5 @@ include = [
     "tsconfig.json",
     "pyproject.toml",
     "README.md",
+    "LICENSE",
 ]
