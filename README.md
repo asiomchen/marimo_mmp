@@ -24,6 +24,8 @@ Or with uv:
 uv add 'marimo-mmp[notebook]'
 ```
 
+Or try example notebook in molab: [![Open in molab](https://molab.marimo.io/molab-shield.svg)](https://molab.marimo.io/notebooks/nb_jkNroAsdinixcQH3gbfDtJ)
+
 
 ```python
 import marimo as mo
